@@ -1,0 +1,319 @@
+{{ 'quick-order-list.css' | asset_url | stylesheet_tag }}
+<script>
+  window.customerId = {{ customer.id | default: 'null' | json }};
+  console.log('🏪 Customer ID set:', window.customerId);
+</script>
+{{ 'persistent-cart.js' | asset_url | script_tag }}
+{% if customer or request.design_mode %}
+
+<div class="quick-order-list page-width">
+   {% render 'search-controls' %}
+
+    <form method="post" action="/cart" class="quick-order-form" id="quick-order-form">
+      <div class="quick-order-table-wrapper">
+        <div class="quick-order-table">
+          {% render 'table-header' %}
+          <div class="table-body" id="product-table-body">
+             {% assign collection = collections['all'] %}
+             {% assign products_per_page = 5 %}
+             {% assign total_products = collection.products.size %}
+             {% assign total_pages = total_products | divided_by: products_per_page | ceil %}
+
+                          {% for product in collection.products limit:10 %}
+               <div class="table-row product-row" data-product-title="{{ product.title | downcase }}" data-product-sku="{{ product.selected_or_first_available_variant.sku | downcase }}" data-collections="{% for collection in product.collections %}{{ collection.handle }} {% endfor %}" data-product-id="{{ product.id }}" data-page="{% assign page_number = forloop.index0 | divided_by: products_per_page | plus: 1 %}{{ page_number }}">
+                <div class="table-cell image-column">
+                  <div class="product-image">
+                    {% if product.featured_image %}
+                      <img src="{{ product.featured_image | img_url: '100x100', crop: 'center' }}" alt="{{ product.title }}" loading="lazy">
+                    {% else %}
+                      <img src="{{ 'no-image.png' | asset_url }}" alt="{{ product.title }}" loading="lazy" class="placeholder-image">
+                    {% endif %}
+                  </div>
+                </div>
+                <div class="table-cell product-column">
+                  <div class="product-info">
+                    <div class="product-details">
+                      <a href="{{ product.url }}" class="product-title">{{ product.title }}</a>
+                      {% if product.vendor %}
+                        <p class="product-vendor">{{ product.vendor }}</p>
+                      {% endif %}
+                      {% if product.has_only_default_variant == false %}
+                        <div class="variant-toggle">
+                          <button type="button" class="variant-toggle-btn" data-product-id="{{ product.id }}">
+                            <span class="toggle-text">Show Variants</span>
+                            <span class="toggle-icon">▼</span>
+                          </button>
+                        </div>
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+                                 <div class="table-cell price-column">
+                   {% if product.has_only_default_variant %}
+                     {% assign first_variant = product.variants.first %}
+                     <span class="price" data-price="{{ first_variant.price }}">{{ first_variant.price | money }}</span>
+                   {% else %}
+                     <span class="price-range">Multiple Prices</span>
+                   {% endif %}
+                 </div>
+                <div class="table-cell quantity-column">
+                  {% if product.has_only_default_variant %}
+                    {% assign first_variant = product.variants.first %}
+                    <div class="quantity-wrapper">
+                      <input
+                        tabindex="0"
+                        class="quantity field qty-input"
+                        id="{{ first_variant.id }}"
+                        step="1"
+                        pattern="^-?\d+$"
+                        product-id="{{ product.id }}"
+                        type="number"
+                        name="updates[{{ first_variant.id }}]"
+                        onfocus="this.select()"
+                        min="0"
+                        value="0"
+                        data-variant-id="{{ first_variant.id }}"
+                        data-variant-sku="{{ first_variant.sku }}"
+                        {% unless first_variant.available %}disabled{% endunless %}
+                      >
+                    </div>
+                  {% else %}
+                    <span class="variant-required">Select Variant</span>
+                  {% endif %}
+                </div>
+                <div class="table-cell total-column">
+                  {% if product.has_only_default_variant %}
+                    <span class="row-total price">Rs 0.00</span>
+                  {% else %}
+                    <span class="row-total price">Rs 0.00</span>
+                  {% endif %}
+                </div>
+              </div>
+
+              {% if product.has_only_default_variant == false %}
+                <div class="variant-rows" data-product-id="{{ product.id }}" style="display: none;">
+                  {% for variant in product.variants %}
+                                         <div class="table-row variant-row" data-variant-id="{{ variant.id }}" data-variant-sku="{{ variant.sku | downcase }}" data-price="{{ variant.price }}">
+                      <div class="table-cell image-column">
+                        <div class="variant-indicator">└─</div>
+                      </div>
+                      <div class="table-cell product-column">
+                        <div class="variant-info">
+                          <span class="variant-title">
+                            {% if variant.title != 'Default Title' %}
+                              {{ variant.title }}
+                            {% else %}
+                              Default
+                            {% endif %}
+                          </span>
+                          {% unless variant.available %}
+                            <span class="sold-out-badge">Sold out</span>
+                          {% endunless %}
+                        </div>
+                      </div>
+                                             <div class="table-cell price-column">
+                         <span class="price" data-price="{{ variant.price }}">{{ variant.price | money }}</span>
+                       </div>
+                      <div class="table-cell quantity-column">
+                        <div class="quantity-wrapper">
+                          <input
+                            tabindex="0"
+                            class="quantity field qty-input"
+                            id="{{ variant.id }}"
+                            step="1"
+                            pattern="^-?\d+$"
+                            product-id="{{ product.id }}"
+                            type="number"
+                            name="updates[{{ variant.id }}]"
+                            onfocus="this.select()"
+                            min="0"
+                            value="0"
+                            data-variant-id="{{ variant.id }}"
+                            data-variant-sku="{{ variant.sku }}"
+                            {% unless variant.available %}disabled{% endunless %}
+                          >
+                        </div>
+                      </div>
+                      <div class="table-cell total-column">
+                        <span class="row-total price">Rs 0.00</span>
+                      </div>
+                    </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+                 </div>
+       </div>
+
+       {% render 'cart-summary' %}
+       {% render 'pagination-controls' %}
+
+     <div class="quick-order-actions">
+       <button type="submit" class="button button--primary" id="view-cart-btn-1">
+         <span>View cart</span>
+       </button>
+     </div>
+   </form>
+</div>
+{% else %}
+  <!-- Customer is not logged in, show login prompt -->
+  <div class="quick-order-login-required page-width">
+    <div class="login-prompt">
+      <div class="login-card">
+        <h1 class="login-title">{{ page.title }}</h1>
+        <div class="login-icon">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z" fill="currentColor"/>
+          </svg>
+        </div>
+        <h2 class="login-heading">Login Required</h2>
+        <p class="login-description">
+          You need to be logged in to access the Quick Order feature.
+          Please log in to your account to continue with bulk ordering.
+        </p>
+        <div class="login-actions">
+          <a href="/account/login?return_url={{ request.path | url_encode }}" class="button button--primary login-button">
+            Log In
+          </a>
+        </div>
+        <div class="login-benefits">
+          <h3>Quick Order Benefits:</h3>
+          <ul>
+            <li>✓ Bulk product ordering</li>
+            <li>✓ Save time with quantity inputs</li>
+            <li>✓ Order history and reordering</li>
+            <li>✓ Personalized product recommendations</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .quick-order-login-required {
+      padding: 60px 20px;
+      min-height: 70vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .login-prompt {
+      max-width: 500px;
+      width: 100%;
+    }
+
+    .login-card {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 40px 30px;
+      text-align: center;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      border: 1px solid #e1e8ed;
+    }
+
+    .login-title {
+      margin: 0 0 20px 0;
+      font-size: 28px;
+      font-weight: 600;
+      color: #202223;
+    }
+
+    .login-icon {
+      margin: 0 0 20px 0;
+      color: #008060;
+    }
+
+    .login-heading {
+      margin: 0 0 15px 0;
+      font-size: 24px;
+      font-weight: 600;
+      color: #202223;
+    }
+
+    .login-description {
+      margin: 0 0 30px 0;
+      font-size: 16px;
+      line-height: 1.6;
+      color: #6d7175;
+    }
+
+    .login-actions {
+      display: flex;
+      margin-bottom: 30px;
+      justify-content: center;
+    }
+
+    .login-button {
+      padding: 14px 32px;
+      border-radius: 4px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 16px;
+      transition: all 0.2s ease;
+      border: none;
+      cursor: pointer;
+      display: inline-block;
+      background-color: #008060;
+      color: white;
+      box-shadow: 0 2px 4px rgba(0, 128, 96, 0.2);
+    }
+
+    .login-button:hover {
+      background-color: #006b52;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0, 128, 96, 0.3);
+      color: white;
+      text-decoration: none;
+    }
+
+    .login-benefits {
+      text-align: left;
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 8px;
+      margin-top: 20px;
+    }
+
+    .login-benefits h3 {
+      margin: 0 0 15px 0;
+      font-size: 18px;
+      color: #202223;
+      text-align: center;
+    }
+
+    .login-benefits ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .login-benefits li {
+      padding: 8px 0;
+      font-size: 14px;
+      color: #008060;
+      display: flex;
+      align-items: center;
+    }
+
+    @media (max-width: 768px) {
+      .quick-order-login-required {
+        padding: 40px 15px;
+      }
+
+      .login-card {
+        padding: 30px 20px;
+      }
+
+      .login-actions {
+        align-items: center;
+      }
+
+      .login-button {
+        width: 100%;
+        max-width: 200px;
+      }
+    }
+  </style>
+{% endif %}

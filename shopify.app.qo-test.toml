@@ -1,0 +1,19 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "31b44a03764c159581bbafa855df7ab3"
+name = "qo-test"
+application_url = " https://col-investigate-lamps-metro.trycloudflare.com"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2025-10"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_companies,read_customers,read_orders,read_products,read_script_tags,read_themes,unauthenticated_read_product_listings,write_companies,write_content,write_customers,write_discounts,write_online_store_navigation,write_orders,write_products,write_script_tags,write_themes"
+
+[auth]
+redirect_urls = [ " https://col-investigate-lamps-metro.trycloudflare.com/api/auth" ]

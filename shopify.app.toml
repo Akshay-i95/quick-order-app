@@ -1,0 +1,32 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "3151b0a102e921b4596882bfa6fe138b"
+name = "QOTest"
+application_url = "https://acoustic-player-multi-litigation.trycloudflare.com"
+embedded = true
+handle = "qotest"
+
+[build]
+include_config_on_deploy = true
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2025-07"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "unauthenticated_read_product_listings,write_themes,read_themes,read_script_tags,write_content,write_online_store_navigation,read_customers,write_customers,read_companies,write_companies,read_orders,write_orders,read_products,write_products,write_discounts,write_script_tags"
+
+[auth]
+redirect_urls = ["https://acoustic-player-multi-litigation.trycloudflare.com/auth/callback", "https://acoustic-player-multi-litigation.trycloudflare.com/auth/shopify/callback", "https://acoustic-player-multi-litigation.trycloudflare.com/api/auth/callback"]
+
+[pos]
+embedded = false
