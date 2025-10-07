@@ -3,7 +3,6 @@ class PersistentCart {
   constructor() {
     this.isCustomer = window.customerId !== null && window.customerId !== 'null';
     this.customerId = window.customerId;
-    this.storageKey = 'quick_order_quantities';
     this.saveTimeout = null;
     this.isSaving = false; // Prevent save loops
     this.isLoading = false; // Prevent load loops
@@ -67,15 +66,24 @@ class PersistentCart {
         console.log('Metafield quantities:', metafieldQuantities);
       }
       
-      // Cart quantities take priority - only show quantities for items actually in cart
-      const finalQuantities = cartQuantities;
+      // Merge cart and metafield quantities - metafields provide persistence across devices
+      const finalQuantities = { ...metafieldQuantities, ...cartQuantities };
       console.log('Final quantities to display:', finalQuantities);
+      
+      // If cart is empty but we have metafield quantities, restore items to cart
+      if (Object.keys(cartQuantities).length === 0 && Object.keys(metafieldQuantities).length > 0) {
+        console.log('🔄 Cart is empty but metafields have quantities. Restoring items to cart...');
+        await this.restoreItemsToCart(metafieldQuantities);
+        // Refetch cart data after adding items
+        const updatedCartData = await this.fetchCurrentCart();
+        this.updateCartIcon(updatedCartData);
+      } else {
+        // update cart icon with current cart state
+        this.updateCartIcon(cartData);
+      }
       
       // Restore quantities to the form
       this.restoreQuantitiesToInputs(finalQuantities);
-      
-      // update cart icon  with current cart state
-      this.updateCartIcon(cartData);
       
       // Save the cart state to metafields for persistence
       if (this.isCustomer && Object.keys(cartQuantities).length > 0) {
@@ -220,14 +228,21 @@ class PersistentCart {
     console.log('Loading saved quantities...');
     let savedQuantities = {};
     
+    // Always use metafields for logged in customers, no localStorage fallback
     if (this.isCustomer) {
       savedQuantities = await this.loadQuantitiesFromMetafields();
+      console.log('Loaded quantities from metafields:', savedQuantities);
     } else {
-      savedQuantities = this.loadQuantitiesFromLocalStorage();
+      console.log('⚠️ Not a logged in customer - no quantities to restore');
     }
     
-    console.log('Loaded quantities:', savedQuantities);
     this.restoreQuantitiesToInputs(savedQuantities);
+  }
+
+  // Update quick order quantities (used during cart sync)
+  updateQuickOrderQuantities(quantities) {
+    console.log('Updating quick order quantities:', quantities);
+    this.restoreQuantitiesToInputs(quantities);
   }
 
   // Restore quantities to input fields
@@ -839,43 +854,34 @@ class PersistentCart {
       const quantities = this.getCurrentQuantities();
       console.log('Saving quantities:', quantities);
       
+      // Only save for logged in customers to metafields
       if (this.isCustomer) {
         await this.saveQuantitiesToMetafields(quantities);
       } else {
-        this.saveQuantitiesToLocalStorage(quantities);
+        console.log('⚠️ Not a logged in customer - skipping quantity save');
       }
     } finally {
       this.isSaving = false;
     }
   }
 
-  // localStorage methods for quantities
-  loadQuantitiesFromLocalStorage() {
-    try {
-      const saved = localStorage.getItem(this.storageKey);
-      return saved ? JSON.parse(saved) : {};
-    } catch (error) {
-      console.error('Error loading quantities from localStorage:', error);
-      return {};
-    }
-  }
-
-  saveQuantitiesToLocalStorage(quantities) {
-    try {
-      localStorage.setItem(this.storageKey, JSON.stringify(quantities));
-      console.log('Quantities saved to localStorage');
-    } catch (error) {
-      console.error('Error saving quantities to localStorage:', error);
-    }
-  }
-
-  // Metafield methods for quantities
+  // Metafield methods for quantities (localStorage removed)
   async loadQuantitiesFromMetafields() {
     try {
       console.log('Loading quantities from metafields...');
-      const response = await fetch('/apps/quick-order/cart/metafields?customerId=' + this.customerId, {
+      console.log('Customer ID for load:', this.customerId);
+      
+      // Don't try to load if no customer ID
+      if (!this.customerId || this.customerId === 'null' || this.customerId === null) {
+        console.log('⚠️ No customer ID available, skipping metafield load');
+        return {};
+      }
+      
+      const response = await fetch(`/apps/quick-order/cart-metafields?customerId=${this.customerId}`, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 
+          'Content-Type': 'application/json'
+        }
       });
 
       if (response.ok) {
@@ -897,28 +903,73 @@ class PersistentCart {
   async saveQuantitiesToMetafields(quantities) {
     try {
       console.log('💾 Saving quantities to metafields:', quantities);
+      console.log('📝 Customer ID for save:', this.customerId);
+      
+      // Don't save to metafields if no customer ID
+      if (!this.customerId || this.customerId === 'null' || this.customerId === null) {
+        console.log('⚠️ No customer ID available, skipping metafield save');
+        return;
+      }
       
       const cartData = {
         quantities: quantities,
         timestamp: new Date().toISOString()
       };
 
-      const response = await fetch('/apps/quick-order/cart/metafields', {
+      const formData = new FormData();
+      formData.append('customerId', this.customerId);
+      formData.append('cartData', JSON.stringify(cartData));
+
+      const response = await fetch('/apps/quick-order/cart-metafields', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerId: this.customerId,
-          cartData: cartData
-        })
+        body: formData
       });
 
       if (response.ok) {
         console.log('✅ Quantities saved to metafields successfully');
+        const result = await response.json();
+        console.log('Save result:', result);
       } else {
         console.error('❌ Failed to save quantities to metafields');
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
       }
     } catch (error) {
       console.error('❌ Error saving quantities to metafields:', error);
+    }
+  }
+
+  // Restore items to cart from metafield quantities
+  async restoreItemsToCart(quantities) {
+    console.log('🔄 Restoring items to cart from metafields:', quantities);
+    
+    try {
+      // Add each item to cart with its saved quantity
+      for (const [variantId, quantity] of Object.entries(quantities)) {
+        if (quantity > 0) {
+          console.log(`➕ Adding variant ${variantId} with quantity ${quantity} to cart`);
+          
+          const formData = new FormData();
+          formData.append('id', variantId);
+          formData.append('quantity', quantity);
+          
+          const response = await fetch('/cart/add.js', {
+            method: 'POST',
+            body: formData
+          });
+          
+          if (response.ok) {
+            console.log(`✅ Added variant ${variantId} to cart successfully`);
+          } else {
+            console.error(`❌ Failed to add variant ${variantId} to cart:`, await response.text());
+          }
+        }
+      }
+      
+      console.log('✅ Finished restoring items to cart');
+      
+    } catch (error) {
+      console.error('❌ Error restoring items to cart:', error);
     }
   }
 

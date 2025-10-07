@@ -100,7 +100,7 @@ export default function CreateQuickOrder() {
                        style={{
                          display: "inline-block",
                          padding: "0.5rem 1rem",           // px-4 py-2
-                         backgroundColor: "#15803d",       // bg-green-700
+                         backgroundColor: "#000000",       // bg-green-700
                          color: "#ffffff",                 // text-white
                          fontWeight: "600",                // font-semibold
                          borderRadius: "0.375rem",         // rounded

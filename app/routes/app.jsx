@@ -28,8 +28,8 @@ export const loader = async ({ request }) => {
       await createMainMenu(admin, newPage);
     }
   }
-  //}
-  //return null;
+
+
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };
 };
 

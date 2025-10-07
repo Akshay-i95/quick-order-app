@@ -30,3 +30,8 @@ redirect_urls = ["https://acoustic-player-multi-litigation.trycloudflare.com/aut
 
 [pos]
 embedded = false
+
+[app_proxy]
+url = "/apps/quick-order"
+subpath = "quick-order"
+prefix = "apps"

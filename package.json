@@ -1,5 +1,5 @@
 {
-  "name": "qo-test",
+  "name": "i95Dev B2B",
   "private": true,
   "scripts": {
     "build": "remix vite:build",

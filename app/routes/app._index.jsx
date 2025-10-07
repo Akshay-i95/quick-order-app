@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { useFetcher } from "@remix-run/react";
 import {
   Page,
   Layout,
@@ -10,88 +12,16 @@ import {
   Link,
   InlineStack,
 } from "@shopify/polaris";
-import { authenticate } from "../shopify.server";
-
-export const loader = async ({ request }) => {
-  const { admin } = await authenticate.admin(request);
-
-  // Auto-create metafield definitions for quick order functionality
-  const metafieldDefinitions = [
-    {
-      name: "Quick Order Cart Data",
-      namespace: "quick_order",
-      key: "cart_data",
-      description: "Stores persistent cart data for quick order functionality",
-      type: "json",
-      ownerType: "CUSTOMER",
-    },
-  ];
-
-  try {
-    for (const definition of metafieldDefinitions) {
-      // Check if the metafield definition already exists
-      const checkResponse = await admin.graphql(`
-        query GetMetafieldDefinitions($ownerType: MetafieldOwnerType!) {
-          metafieldDefinitions(first: 50, ownerType: $ownerType) {
-            edges {
-              node {
-                id
-                name
-                namespace
-                key
-              }
-            }
-          }
-        }
-      `, {
-        variables: {
-          ownerType: definition.ownerType,
-        },
-      });
-
-      const checkData = await checkResponse.json();
-      const existingDefinition = checkData.data?.metafieldDefinitions?.edges?.find(
-        edge => edge.node.namespace === definition.namespace && edge.node.key === definition.key
-      );
-
-      if (!existingDefinition) {
-        // Create metafield definition automatically
-        const response = await admin.graphql(`
-          mutation CreateMetafieldDefinition($definition: MetafieldDefinitionInput!) {
-            metafieldDefinitionCreate(definition: $definition) {
-              createdDefinition {
-                id
-                name
-                namespace
-                key
-              }
-              userErrors {
-                field
-                message
-              }
-            }
-          }
-        `, {
-          variables: { definition },
-        });
-
-        const responseData = await response.json();
-        
-        if (responseData.data?.metafieldDefinitionCreate?.userErrors?.length === 0) {
-          console.log(`${definition.key} metafield definition created automatically on app load`);
-        } else {
-          console.error(`Error creating ${definition.key} metafield definition:`, responseData.data?.metafieldDefinitionCreate?.userErrors);
-        }
-      }
-    }
-  } catch (error) {
-    console.error("Error auto-creating metafield definitions:", error);
-  }
-
-  return null;
-};
+import { TitleBar } from "@shopify/app-bridge-react";
 
 export default function Index() {
+  const fetcher = useFetcher();
+
+  // Trigger the Quick Order metafield setup when this component mounts
+  useEffect(() => {
+    // This ensures metafield definitions get created when the app is installed/accessed
+    fetcher.load("/app/quickorder-metafield-setup");
+  }, []);
 
   return (
     <Page>
