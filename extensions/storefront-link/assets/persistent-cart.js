@@ -607,6 +607,11 @@ class PersistentCart {
       // Save current state to metafields
       await this.saveCurrentQuantities();
       
+      // Dispatch event to notify other components
+      document.dispatchEvent(new CustomEvent('cartUpdated', {
+        detail: { variantId, newQuantity, cartData: updatedCartData }
+      }));
+      
     } catch (error) {
       console.error('Error handling quantity change:', error);
     } finally {
@@ -854,14 +859,8 @@ class PersistentCart {
         }
       }));
 
-      // Trigger cart synced event for fixed cart summary
-      document.dispatchEvent(new CustomEvent('cartSynced', {
-        detail: { 
-          itemCount: itemCount, 
-          cartData: cartData,
-          timestamp: Date.now() 
-        }
-      }));
+      // Note: Removed cartSynced event to prevent conflicts with cart summary updates
+      // Fixed cart summary now updates via cartUpdated and subtotalUpdated events
 
       // Update browser title if it shows cart count
       if (document.title.includes('(') && document.title.includes(')')) {
@@ -1426,6 +1425,11 @@ class PriceCalculator {
     } else {
       console.warn('❌ Subtotal element not found (#subtotal-amount)');
     }
+    
+    // Dispatch event to notify fixed cart summary
+    document.dispatchEvent(new CustomEvent('subtotalUpdated', {
+      detail: { subtotal }
+    }));
   }
 }
 
@@ -1998,16 +2002,14 @@ class FixedCartSummary {
     // Wait for persistent cart to load, then sync with cart data
     this.waitForPersistentCartAndSync();
 
-    // Listen for quantity changes with debouncing
+    // Listen for custom events instead of direct input events to avoid conflicts
     this.updateTimeout = null;
-    document.addEventListener('input', (e) => {
-      if (e.target.classList.contains('qty-input')) {
-        // Update row subtotal immediately for live streaming effect
-        this.updateRowSubtotalImmediate(e.target);
-        
-        this.validateStockQuantity(e.target);
-        this.debouncedUpdateFixedCartSummary();
-      }
+    document.addEventListener('cartUpdated', () => {
+      this.debouncedUpdateFixedCartSummary();
+    });
+    
+    document.addEventListener('subtotalUpdated', () => {
+      this.debouncedUpdateFixedCartSummary();
     });
 
     // Handle clicks on disabled quantity inputs
@@ -2026,15 +2028,8 @@ class FixedCartSummary {
       }
     });
 
-    // Listen for cart sync events with debouncing
-    document.addEventListener('cartSynced', () => {
-      // Clear any pending updates to avoid conflicts
-      if (this.updateTimeout) {
-        clearTimeout(this.updateTimeout);
-      }
-      // Sync with cart data directly (no debouncing for cart sync)
-      setTimeout(() => this.syncWithCart(), 100);
-    });
+    // Removed cartSynced event listener to prevent conflicts
+    // Cart summary now updates only via cartUpdated and subtotalUpdated events
 
     // Bind quantity button events
     this.bindQuantityButtons();
@@ -2046,10 +2041,10 @@ class FixedCartSummary {
       clearTimeout(this.updateTimeout);
     }
     
-    // Set a new timeout to update after user stops typing/clicking
+    // Set a longer timeout to prevent flickering from multiple rapid updates
     this.updateTimeout = setTimeout(() => {
       this.updateFixedCartSummary();
-    }, 150);
+    }, 500);
   }
 
   // Update row subtotal immediately (same as in PersistentCart class)
@@ -2259,21 +2254,29 @@ class FixedCartSummary {
     const newItemText = `${totalItems} ${itemText} in cart`;
     const newAmountText = this.formatMoney(totalAmount);
 
-    // Update both elements atomically to prevent flickering
-    requestAnimationFrame(() => {
-      if (this.itemCountElement) {
-        this.itemCountElement.textContent = newItemText;
-      }
+    // Only update if the values have actually changed to prevent unnecessary DOM updates
+    const currentItemText = this.itemCountElement?.textContent;
+    const currentAmountText = this.totalAmountElement?.textContent;
+    
+    if (currentItemText !== newItemText || currentAmountText !== newAmountText) {
+      // Update both elements atomically to prevent flickering
+      requestAnimationFrame(() => {
+        if (this.itemCountElement && currentItemText !== newItemText) {
+          this.itemCountElement.textContent = newItemText;
+        }
 
-      if (this.totalAmountElement) {
-        this.totalAmountElement.textContent = newAmountText;
-      }
+        if (this.totalAmountElement && currentAmountText !== newAmountText) {
+          this.totalAmountElement.textContent = newAmountText;
+        }
 
-      // Always show fixed cart (never hide)
-      if (this.fixedCartElement) {
-        this.fixedCartElement.style.display = 'block';
-      }
-    });
+        // Always show fixed cart (never hide)
+        if (this.fixedCartElement) {
+          this.fixedCartElement.style.display = 'block';
+        }
+        
+        console.log('🛒 Fixed cart updated (local calculation):', newItemText, newAmountText);
+      });
+    }
 
     // Reset update flag
     this.isUpdating = false;

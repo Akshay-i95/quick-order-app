@@ -43,10 +43,10 @@ export default function App() {
           Home
         </Link>
         <Link to="/app/create-quick-order">Quick Orders</Link>
-        <Link to="/app/outbound-message">OutBound Message Queue</Link>
+        {/* <Link to="/app/outbound-message">OutBound Message Queue</Link>
         <Link to="/app/inbound-message">InBound Message Queue</Link>
         <Link to="/app/online-store">Online Store</Link>
-        <Link to="/app/settings">Account & Settings</Link>
+        <Link to="/app/settings">Account & Settings</Link> */}
       </NavMenu>
       <Outlet />
     </AppProvider>
