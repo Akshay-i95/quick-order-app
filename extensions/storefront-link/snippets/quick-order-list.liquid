@@ -6,155 +6,393 @@
 {{ 'persistent-cart.js' | asset_url | script_tag }}
 {% if customer or request.design_mode %}
 
-<div class="quick-order-list page-width">
-   {% render 'search-controls' %}
+<div class="quick-order-container">
+  <!-- Header Section -->
+  <div class="qo-header">
+    <div class="qo-header-content">
+      <h1 class="qo-title">Quick Order</h1>
+      <p class="qo-subtitle">Add multiple products to your cart in one go</p>
+    </div>
+  </div>
 
-    <form method="post" action="/cart" class="quick-order-form" id="quick-order-form">
-      <div class="quick-order-table-wrapper">
-        <div class="quick-order-table">
-          {% render 'table-header' %}
-          <div class="table-body" id="product-table-body">
-             {% assign collection = collections['all'] %}
-             {% assign products_per_page = 5 %}
-             {% assign total_products = collection.products.size %}
-             {% assign total_pages = total_products | divided_by: products_per_page | ceil %}
+  <!-- Search Section -->
+  <div class="qo-search-section">
+    <div class="qo-search-wrapper">
+      <div class="qo-search-input-wrapper">
+        <svg class="qo-search-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M17.5 17.5L14.5834 14.5834M16.6667 9.58333C16.6667 13.4954 13.4954 16.6667 9.58333 16.6667C5.67132 16.6667 2.5 13.4954 2.5 9.58333C2.5 5.67132 5.67132 2.5 9.58333 2.5C13.4954 2.5 16.6667 5.67132 16.6667 9.58333Z" stroke="currentColor" stroke-width="1.66667" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <input 
+          type="text" 
+          id="collection-search" 
+          placeholder="Search products by name or SKU..." 
+          class="qo-search-input"
+        >
+      </div>
+      <div class="qo-filter-wrapper">
+        <select id="collection-select" class="qo-filter-select">
+          <option value="all">All Collections</option>
+          {% for collection in collections %}
+            <option value="{{ collection.handle }}">{{ collection.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </div>
 
-                          {% for product in collection.products limit:10 %}
-               <div class="table-row product-row" data-product-title="{{ product.title | downcase }}" data-product-sku="{{ product.selected_or_first_available_variant.sku | downcase }}" data-collections="{% for collection in product.collections %}{{ collection.handle }} {% endfor %}" data-product-id="{{ product.id }}" data-page="{% assign page_number = forloop.index0 | divided_by: products_per_page | plus: 1 %}{{ page_number }}">
-                <div class="table-cell image-column">
-                  <div class="product-image">
-                    {% if product.featured_image %}
-                      <img src="{{ product.featured_image | img_url: '100x100', crop: 'center' }}" alt="{{ product.title }}" loading="lazy">
-                    {% else %}
-                      <img src="{{ 'no-image.png' | asset_url }}" alt="{{ product.title }}" loading="lazy" class="placeholder-image">
-                    {% endif %}
-                  </div>
-                </div>
-                <div class="table-cell product-column">
-                  <div class="product-info">
-                    <div class="product-details">
-                      <a href="{{ product.url }}" class="product-title">{{ product.title }}</a>
-                      {% if product.vendor %}
-                        <p class="product-vendor">{{ product.vendor }}</p>
-                      {% endif %}
-                      {% if product.has_only_default_variant == false %}
-                        <div class="variant-toggle">
-                          <button type="button" class="variant-toggle-btn" data-product-id="{{ product.id }}">
-                            <span class="toggle-text">Show Variants</span>
-                            <span class="toggle-icon">▼</span>
-                          </button>
-                        </div>
-                      {% endif %}
-                    </div>
-                  </div>
-                </div>
-                                 <div class="table-cell price-column">
-                   {% if product.has_only_default_variant %}
-                     {% assign first_variant = product.variants.first %}
-                     <span class="price" data-price="{{ first_variant.price }}">{{ first_variant.price | money }}</span>
-                   {% else %}
-                     <span class="price-range">Multiple Prices</span>
-                   {% endif %}
-                 </div>
-                <div class="table-cell quantity-column">
-                  {% if product.has_only_default_variant %}
-                    {% assign first_variant = product.variants.first %}
-                    <div class="quantity-wrapper">
-                      <input
-                        tabindex="0"
-                        class="quantity field qty-input"
-                        id="{{ first_variant.id }}"
-                        step="1"
-                        pattern="^-?\d+$"
-                        product-id="{{ product.id }}"
-                        type="number"
-                        name="updates[{{ first_variant.id }}]"
-                        onfocus="this.select()"
-                        min="0"
-                        value="0"
-                        data-variant-id="{{ first_variant.id }}"
-                        data-variant-sku="{{ first_variant.sku }}"
-                        {% unless first_variant.available %}disabled{% endunless %}
-                      >
-                    </div>
-                  {% else %}
-                    <span class="variant-required">Select Variant</span>
-                  {% endif %}
-                </div>
-                <div class="table-cell total-column">
-                  {% if product.has_only_default_variant %}
-                    <span class="row-total price">Rs 0.00</span>
-                  {% else %}
-                    <span class="row-total price">Rs 0.00</span>
-                  {% endif %}
-                </div>
-              </div>
-
-              {% if product.has_only_default_variant == false %}
-                <div class="variant-rows" data-product-id="{{ product.id }}" style="display: none;">
-                  {% for variant in product.variants %}
-                                         <div class="table-row variant-row" data-variant-id="{{ variant.id }}" data-variant-sku="{{ variant.sku | downcase }}" data-price="{{ variant.price }}">
-                      <div class="table-cell image-column">
-                        <div class="variant-indicator">└─</div>
-                      </div>
-                      <div class="table-cell product-column">
-                        <div class="variant-info">
-                          <span class="variant-title">
-                            {% if variant.title != 'Default Title' %}
-                              {{ variant.title }}
-                            {% else %}
-                              Default
-                            {% endif %}
-                          </span>
-                          {% unless variant.available %}
-                            <span class="sold-out-badge">Sold out</span>
-                          {% endunless %}
-                        </div>
-                      </div>
-                                             <div class="table-cell price-column">
-                         <span class="price" data-price="{{ variant.price }}">{{ variant.price | money }}</span>
-                       </div>
-                      <div class="table-cell quantity-column">
-                        <div class="quantity-wrapper">
-                          <input
-                            tabindex="0"
-                            class="quantity field qty-input"
-                            id="{{ variant.id }}"
-                            step="1"
-                            pattern="^-?\d+$"
-                            product-id="{{ product.id }}"
-                            type="number"
-                            name="updates[{{ variant.id }}]"
-                            onfocus="this.select()"
-                            min="0"
-                            value="0"
-                            data-variant-id="{{ variant.id }}"
-                            data-variant-sku="{{ variant.sku }}"
-                            {% unless variant.available %}disabled{% endunless %}
-                          >
-                        </div>
-                      </div>
-                      <div class="table-cell total-column">
-                        <span class="row-total price">Rs 0.00</span>
-                      </div>
-                    </div>
-                  {% endfor %}
-                </div>
+  <!-- Products Section -->
+  <form method="post" action="/cart" class="qo-form" id="quick-order-form">
+    <div class="qo-products-section">
+      <!-- Column Headers -->
+      <div class="qo-table-header">
+        <div class="qo-header-image">Product</div>
+        <div class="qo-header-info">Details</div>
+        <div class="qo-header-status">Status</div>
+        <div class="qo-header-price">Price</div>
+        <div class="qo-header-quantity">Quantity</div>
+        <div class="qo-header-total">Subtotal</div>
+      </div>
+      
+      <div class="qo-products-grid" id="product-table-body">
+        {% assign collection = collections['all'] %}
+        {% comment %} Load all products from inventory {% endcomment %}
+        
+        {% for product in collections.all.products %}
+          {% comment %} Check if product is out of stock {% endcomment %}
+          {% assign is_out_of_stock = true %}
+          {% if product.has_only_default_variant %}
+            {% if product.variants.first.available %}
+              {% assign is_out_of_stock = false %}
+            {% endif %}
+          {% else %}
+            {% for variant in product.variants %}
+              {% if variant.available %}
+                {% assign is_out_of_stock = false %}
+                {% break %}
               {% endif %}
             {% endfor %}
+          {% endif %}
+          
+          <div class="qo-product-card table-row{% if is_out_of_stock %} qo-product-out-of-stock{% endif %}" 
+               data-product-title="{{ product.title | downcase }}" 
+               data-product-sku="{{ product.selected_or_first_available_variant.sku | downcase }}" 
+               data-collections="{% for collection in product.collections %}{{ collection.handle }} {% endfor %}" 
+               data-product-id="{{ product.id }}"
+               data-out-of-stock="{{ is_out_of_stock }}">
+            
+            <!-- Product Image -->
+            <div class="qo-product-image">
+              {% if product.featured_image %}
+                <img src="{{ product.featured_image | img_url: '80x80' }}" 
+                     alt="{{ product.title }}" 
+                     loading="lazy">
+              {% else %}
+                <div class="qo-image-placeholder">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" stroke="currentColor" stroke-width="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5" stroke="currentColor" stroke-width="2"/>
+                    <polyline points="21,15 16,10 5,21" stroke="currentColor" stroke-width="2"/>
+                  </svg>
+                </div>
+              {% endif %}
+            </div>
+
+            <!-- Product Info -->
+            <div class="qo-product-info">
+              <div class="qo-product-main">
+                <a href="{{ product.url }}" class="qo-product-title">{{ product.title }}</a>
+                {% if product.vendor and product.vendor != blank %}
+                  <span class="qo-product-vendor">{{ product.vendor }}</span>
+                {% endif %}
+                {% if product.selected_or_first_available_variant.sku != blank %}
+                  <span class="qo-product-sku">SKU: {{ product.selected_or_first_available_variant.sku }}</span>
+                {% endif %}
+              </div>
+              
+              {% if product.has_only_default_variant == false %}
+                <button 
+                  type="button" 
+                  class="qo-variant-toggle variant-toggle-btn" 
+                  data-product-id="{{ product.id }}" 
+                  data-variant-count="{{ product.variants.size }}"
+                  aria-expanded="false"
+                  aria-controls="variants-{{ product.id }}"
+                  aria-label="Show {{ product.variants.size }} variants for {{ product.title | escape }}"
+                  title="Click to view {{ product.variants.size }} available variants">
+                  <span class="toggle-text">{{ product.variants.size }} variants</span>
+                  <svg class="qo-chevron toggle-icon" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                    <path d="M2 4.5L6 8.5L10 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+              {% endif %}
+            </div>
+
+            <!-- Status Info (Stock hidden but kept in data attributes) -->
+            <div class="qo-product-status">
+              {% if product.has_only_default_variant %}
+                {% assign first_variant = product.variants.first %}
+                {% if first_variant.available %}
+                  <div class="qo-status-badge qo-status-active">
+                    <svg class="qo-status-icon" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <circle cx="6" cy="6" r="5" fill="currentColor"/>
+                    </svg>
+                    Available
+                  </div>
+                {% else %}
+                  <div class="qo-status-badge qo-status-inactive">
+                    <svg class="qo-status-icon" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <circle cx="6" cy="6" r="5" fill="currentColor"/>
+                    </svg>
+                    Out of Stock
+                  </div>
+                {% endif %}
+              {% else %}
+                {% assign active_variants = 0 %}
+                {% for variant in product.variants %}
+                  {% if variant.available %}
+                    {% assign active_variants = active_variants | plus: 1 %}
+                  {% endif %}
+                {% endfor %}
+                
+                {% if active_variants > 0 %}
+                  <div class="qo-status-badge qo-status-active">
+                    <svg class="qo-status-icon" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <circle cx="6" cy="6" r="5" fill="currentColor"/>
+                    </svg>
+                    Available
+                  </div>
+                  <div class="qo-variant-summary">
+                    {{ active_variants }}/{{ product.variants.size }} variants available
+                  </div>
+                {% else %}
+                  <div class="qo-status-badge qo-status-inactive">
+                    <svg class="qo-status-icon" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <circle cx="6" cy="6" r="5" fill="currentColor"/>
+                    </svg>
+                    Out of Stock
+                  </div>
+                {% endif %}
+              {% endif %}
+            </div>
+
+            <!-- Price -->
+            <div class="qo-product-price">
+              {% if product.has_only_default_variant %}
+                {% assign first_variant = product.variants.first %}
+                <span class="price qo-price-value" data-price="{{ first_variant.price }}">
+                  {{ first_variant.price | money }}
+                </span>
+              {% else %}
+                {% assign min_price = product.price_min %}
+                {% assign max_price = product.price_max %}
+                {% if min_price == max_price %}
+                  <span class="price qo-price-value">{{ min_price | money }}</span>
+                {% else %}
+                  <span class="qo-price-range">{{ min_price | money }} - {{ max_price | money }}</span>
+                {% endif %}
+              {% endif %}
+            </div>
+
+            <!-- Quantity -->
+            <div class="qo-product-quantity">
+              {% if product.has_only_default_variant %}
+                {% assign first_variant = product.variants.first %}
+                <div class="qo-quantity-input-wrapper{% unless first_variant.available %} qo-quantity-disabled{% endunless %}">
+                  <button type="button" class="qo-qty-btn qo-qty-decrease" tabindex="-1"{% unless first_variant.available %} disabled{% endunless %}>
+                    <svg width="12" height="12" viewBox="0 0 12 12">
+                      <path d="M2 6H10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                  <input
+                    type="number"
+                    class="qo-quantity-input qty-input"
+                    id="{{ first_variant.id }}"
+                    name="updates[{{ first_variant.id }}]"
+                    min="0"
+                    value="0"
+                    data-variant-id="{{ first_variant.id }}"
+                    data-variant-sku="{{ first_variant.sku }}"
+                    data-stock-quantity="{% if first_variant.inventory_management == 'shopify' and first_variant.inventory_quantity %}{{ first_variant.inventory_quantity }}{% else %}999999{% endif %}"
+                    data-inventory-management="{{ first_variant.inventory_management }}"
+                    {% unless first_variant.available %}disabled{% endunless %}
+                  >
+                  <button type="button" class="qo-qty-btn qo-qty-increase" tabindex="-1"{% unless first_variant.available %} disabled{% endunless %}>
+                    <svg width="12" height="12" viewBox="0 0 12 12">
+                      <path d="M6 2V10M2 6H10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+              {% else %}
+                <div class="qo-variant-prompt">
+                  <span>Select variant</span>
+                </div>
+              {% endif %}
+            </div>
+
+            <!-- Total -->
+            <div class="qo-product-total">
+              <span class="qo-total-value row-total">₹0.00</span>
+            </div>
           </div>
-                 </div>
-       </div>
 
-       {% render 'cart-summary' %}
-       {% render 'pagination-controls' %}
+          <!-- Variant Rows (Hidden by default) -->
+          {% if product.has_only_default_variant == false %}
+            <div 
+              class="qo-variants-container variant-rows" 
+              data-product-id="{{ product.id }}" 
+              id="variants-{{ product.id }}"
+              role="region"
+              aria-label="Variants for {{ product.title | escape }}"
+              style="display: none;">
+              {% for variant in product.variants %}
+                <div class="qo-variant-card table-row variant-row" 
+                     data-variant-id="{{ variant.id }}" 
+                     data-variant-sku="{{ variant.sku | downcase }}" 
+                     data-price="{{ variant.price }}">
+                  
+                  <div class="qo-variant-image">
+                    <div class="qo-variant-connector">
+                      <svg class="qo-variant-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M4 2L8 6L4 10" stroke="#000000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </div>
+                  </div>
 
-     <div class="quick-order-actions">
-       <button type="submit" class="button button--primary" id="view-cart-btn-1">
-         <span>View cart</span>
-       </button>
-     </div>
-   </form>
+                  <div class="qo-variant-info">
+                    <span class="qo-variant-title">
+                      {% if variant.title != 'Default Title' %}
+                        {{ variant.title }}
+                      {% else %}
+                        Default
+                      {% endif %}
+                    </span>
+                    {% if variant.sku != blank %}
+                      <span class="qo-variant-sku">SKU: {{ variant.sku }}</span>
+                    {% endif %}
+                  </div>
+
+                  <div class="qo-variant-status">
+                    {% if variant.available %}
+                      <div class="qo-status-badge qo-status-active qo-status-small">
+                        <svg class="qo-status-icon" width="8" height="8" viewBox="0 0 8 8" fill="none">
+                          <circle cx="4" cy="4" r="3" fill="currentColor"/>
+                        </svg>
+                        Available
+                      </div>
+                    {% else %}
+                      <div class="qo-status-badge qo-status-inactive qo-status-small">
+                        <svg class="qo-status-icon" width="8" height="8" viewBox="0 0 8 8" fill="none">
+                          <circle cx="4" cy="4" r="3" fill="currentColor"/>
+                        </svg>
+                        Out of Stock
+                      </div>
+                    {% endif %}
+                  </div>
+
+                  <div class="qo-variant-price">
+                    <span class="price qo-price-value" data-price="{{ variant.price }}">
+                      {{ variant.price | money }}
+                    </span>
+                  </div>
+
+                  <div class="qo-variant-quantity">
+                    <div class="qo-quantity-input-wrapper{% unless variant.available %} qo-quantity-disabled{% endunless %}">
+                      <button type="button" class="qo-qty-btn qo-qty-decrease" tabindex="-1"{% unless variant.available %} disabled{% endunless %}>
+                        <svg width="12" height="12" viewBox="0 0 12 12">
+                          <path d="M2 6H10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                        </svg>
+                      </button>
+                      <input
+                        type="number"
+                        class="qo-quantity-input qty-input"
+                        id="{{ variant.id }}"
+                        name="updates[{{ variant.id }}]"
+                        min="0"
+                        value="0"
+                        data-variant-id="{{ variant.id }}"
+                        data-variant-sku="{{ variant.sku }}"
+                        data-stock-quantity="{% if variant.inventory_management == 'shopify' and variant.inventory_quantity %}{{ variant.inventory_quantity }}{% else %}999999{% endif %}"
+                        data-inventory-management="{{ variant.inventory_management }}"
+                        {% unless variant.available %}disabled{% endunless %}
+                      >
+                      <button type="button" class="qo-qty-btn qo-qty-increase" tabindex="-1"{% unless variant.available %} disabled{% endunless %}>
+                        <svg width="12" height="12" viewBox="0 0 12 12">
+                          <path d="M6 2V10M2 6H10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="qo-variant-total">
+                    <span class="qo-total-value row-total">₹0.00</span>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Clean Pagination -->
+    <div class="qo-pagination">
+      <div class="qo-pagination__navigation">
+        <button type="button" id="prev-page" class="qo-pagination__button qo-pagination__button--nav" disabled>
+          <svg class="qo-pagination__icon" viewBox="0 0 20 20" width="16" height="16">
+            <path fill="currentColor" d="M12 4l-8 8 8 8" stroke="currentColor" stroke-width="2" fill="none"/>
+          </svg>
+          Previous
+        </button>
+        
+        <div class="qo-pagination__numbers" id="page-numbers">
+          <button type="button" class="qo-pagination__number qo-pagination__number--active" data-page="1">1</button>
+          <button type="button" class="qo-pagination__number" data-page="2">2</button>
+          <button type="button" class="qo-pagination__number" data-page="3">3</button>
+        </div>
+        
+        <button type="button" id="next-page" class="qo-pagination__button qo-pagination__button--nav">
+          Next
+          <svg class="qo-pagination__icon" viewBox="0 0 20 20" width="16" height="16">
+            <path fill="currentColor" d="M8 4l8 8-8 8" stroke="currentColor" stroke-width="2" fill="none"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Add some bottom spacing for fixed cart -->
+    <div class="qo-bottom-spacer"></div>
+  </form>
+
+  <!-- Fixed Bottom Cart Summary -->
+  <div class="qo-fixed-cart-summary" id="fixed-cart-summary">
+    <div class="qo-fixed-cart-content">
+      <div class="qo-cart-info">
+        <div class="qo-cart-items">
+          <svg class="qo-cart-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M3.33333 3.33333H4.40833L6.29167 11.9917C6.34992 12.2723 6.5054 12.5257 6.73118 12.7087C6.95697 12.8918 7.23913 12.9931 7.53083 12.9917H15.2392C15.5309 12.9931 15.813 12.8918 16.0388 12.7087C16.2646 12.5257 16.4201 12.2723 16.4783 11.9917L17.5 6.66667H5M8.33333 17.5C8.33333 17.9602 7.96024 18.3333 7.5 18.3333C7.03976 18.3333 6.66667 17.9602 6.66667 17.5C6.66667 17.0398 7.03976 16.6667 7.5 16.6667C7.96024 16.6667 8.33333 17.0398 8.33333 17.5ZM16.6667 17.5C16.6667 17.9602 16.2936 18.3333 15.8333 18.3333C15.3731 18.3333 15 17.9602 15 17.5C15 17.0398 15.3731 16.6667 15.8333 16.6667C16.2936 16.6667 16.6667 17.0398 16.6667 17.5Z" stroke="currentColor" stroke-width="1.67" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="qo-item-count" id="cart-item-count">0 items in cart</span>
+        </div>
+        <div class="qo-cart-total">
+          <span class="qo-total-amount" id="fixed-subtotal-amount">$0.00</span>
+        </div>
+      </div>
+      <div class="qo-cart-actions">
+        <button type="button" class="qo-clear-btn" id="clear-all-btn">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M2 4H14M6.5 1V3M9.5 1V3M3 4V14C3 14.5523 3.44772 15 4 15H12C12.5523 15 13 14.5523 13 14V4M6.5 7V11.5M9.5 7V11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Clear all
+        </button>
+        <button type="submit" class="qo-add-to-cart-btn qo-polaris-button" form="quick-order-form">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          View cart
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
 {% else %}
   <!-- Customer is not logged in, show login prompt -->

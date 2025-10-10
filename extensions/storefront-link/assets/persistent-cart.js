@@ -30,8 +30,6 @@ class PersistentCart {
     // Ensure subtotal is calculated after everything is loaded
     setTimeout(() => {
       this.updateInitialSubtotal();
-      // Also update cart icon initially
-      this.updateCartIconImmediate();
     }, 500);
   }
 
@@ -48,7 +46,8 @@ class PersistentCart {
 
   // Load cart state and sync with quick order quantities
   async loadCartState() {
-    console.log('Loading cart state and syncing quantities...');
+    console.log('🚀 Loading cart state and syncing quantities...');
+    console.log('🔍 Customer status:', { isCustomer: this.isCustomer, customerId: this.customerId });
     
     try {
       // Get current cart from Shopify
@@ -66,28 +65,62 @@ class PersistentCart {
         console.log('Metafield quantities:', metafieldQuantities);
       }
       
-      // Merge cart and metafield quantities - metafields provide persistence across devices
-      const finalQuantities = { ...metafieldQuantities, ...cartQuantities };
-      console.log('Final quantities to display:', finalQuantities);
+      // Metafield quantities take priority - restore saved items first
+      let finalQuantities = {};
       
-      // If cart is empty but we have metafield quantities, restore items to cart
-      if (Object.keys(cartQuantities).length === 0 && Object.keys(metafieldQuantities).length > 0) {
-        console.log('🔄 Cart is empty but metafields have quantities. Restoring items to cart...');
-        await this.restoreItemsToCart(metafieldQuantities);
-        // Refetch cart data after adding items
-        const updatedCartData = await this.fetchCurrentCart();
-        this.updateCartIcon(updatedCartData);
+      if (this.isCustomer && Object.keys(metafieldQuantities).length > 0) {
+        // Use metafield quantities as the primary source
+        finalQuantities = { ...metafieldQuantities };
+        console.log('Using metafield quantities as primary source:', finalQuantities);
+        
+        // If cart has different quantities, merge them (cart wins for conflicts)
+        if (Object.keys(cartQuantities).length > 0) {
+          console.log('Merging with current cart quantities...');
+          finalQuantities = { ...finalQuantities, ...cartQuantities };
+        }
       } else {
-        // update cart icon with current cart state
-        this.updateCartIcon(cartData);
+        // No metafield data, use cart quantities
+        finalQuantities = cartQuantities;
+        console.log('No metafield data, using cart quantities:', finalQuantities);
       }
+      
+      console.log('Final quantities to display:', finalQuantities);
       
       // Restore quantities to the form
       this.restoreQuantitiesToInputs(finalQuantities);
       
-      // Save the cart state to metafields for persistence
-      if (this.isCustomer && Object.keys(cartQuantities).length > 0) {
-        await this.saveQuantitiesToMetafields(cartQuantities);
+      // If we have metafield quantities that aren't in the cart, restore them to cart
+      if (this.isCustomer && Object.keys(metafieldQuantities).length > 0) {
+        const needsCartRestore = Object.keys(metafieldQuantities).some(variantId => {
+          const metafieldQty = metafieldQuantities[variantId] || 0;
+          const cartQty = cartQuantities[variantId] || 0;
+          console.log(`🔍 Checking restore need for variant ${variantId}: metafield=${metafieldQty}, cart=${cartQty}`);
+          return metafieldQty > 0 && cartQty === 0;
+        });
+        
+        console.log(`🔄 Needs cart restore: ${needsCartRestore}`);
+        
+        if (needsCartRestore) {
+          console.log('🔄 Restoring metafield quantities to cart...');
+          await this.restoreItemsToCart(metafieldQuantities);
+          
+          // Reload cart after restoration
+          setTimeout(async () => {
+            const updatedCart = await this.fetchCurrentCart();
+            this.updateCartIcon(updatedCart);
+          }, 1000);
+        } else {
+          // Update cart icon with current cart state
+          this.updateCartIcon(cartData);
+        }
+      } else {
+        // Update cart icon with current cart state
+        this.updateCartIcon(cartData);
+      }
+      
+      // Save the final state to metafields for persistence
+      if (this.isCustomer && Object.keys(finalQuantities).length > 0) {
+        await this.saveQuantitiesToMetafields(finalQuantities);
       }
       
     } catch (error) {
@@ -223,7 +256,7 @@ class PersistentCart {
     });
   }
 
-  // Load saved quantities and restore them to input fields (fallback method)
+  // Load saved quantities and restore them to input fields (metafields only)
   async loadQuantities() {
     console.log('Loading saved quantities...');
     let savedQuantities = {};
@@ -239,42 +272,41 @@ class PersistentCart {
     this.restoreQuantitiesToInputs(savedQuantities);
   }
 
-  // Update quick order quantities (used during cart sync)
-  updateQuickOrderQuantities(quantities) {
-    console.log('Updating quick order quantities:', quantities);
-    this.restoreQuantitiesToInputs(quantities);
-  }
-
   // Restore quantities to input fields
   restoreQuantitiesToInputs(quantities) {
-    console.log('Restoring quantities to inputs:', quantities);
+    console.log('🎯 Restoring quantities to inputs:', quantities);
     
     // First, reset ALL quantity inputs to 0
     const allInputs = document.querySelectorAll('input[data-variant-id], input[name^="updates["]');
+    console.log(`🔄 Resetting ${allInputs.length} quantity inputs to 0`);
     allInputs.forEach(input => {
       input.value = 0;
     });
     
     // Then set the correct quantities from cart
+    let updatedCount = 0;
     Object.entries(quantities).forEach(([variantId, quantity]) => {
       const input = document.querySelector(`input[data-variant-id="${variantId}"], input[name="updates[${variantId}]"]`);
       if (input) {
         input.value = quantity || 0;
-        console.log(`Set quantity for variant ${variantId}: ${quantity}`);
+        console.log(`✅ Set quantity for variant ${variantId}: ${quantity}`);
+        updatedCount++;
         // Trigger change event to update totals
         input.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        console.log(`⚠️ Input not found for variant ${variantId}`);
       }
     });
     
+    console.log(`🎯 Updated ${updatedCount} out of ${Object.keys(quantities).length} quantities`);
+    
     console.log('✅ All quantities synced with cart state');
     
-    // Update subtotal and cart icon after restoring quantities
+    // Update subtotal after restoring quantities
     setTimeout(() => {
       if (window.priceCalculator) {
         window.priceCalculator.updateSubtotal();
       }
-      // Update cart icon to reflect restored quantities
-      this.updateCartIconImmediate();
     }, 100);
   }
 
@@ -521,11 +553,6 @@ class PersistentCart {
     document.addEventListener('change', (e) => {
       if (e.target.matches('input[data-variant-id], input[name^="updates["]')) {
         console.log('Quantity changed for input:', e.target);
-        
-        // Immediate cart icon update
-        this.updateCartIconImmediate();
-        
-        // Handle the quantity change
         this.handleQuantityChange(e.target);
       }
     });
@@ -533,14 +560,21 @@ class PersistentCart {
     // Also save on input (for real-time updates)
     document.addEventListener('input', (e) => {
       if (e.target.matches('input[data-variant-id], input[name^="updates["]')) {
-        // Immediate cart icon update for instant feedback
-        this.updateCartIconImmediate();
+        // Update row subtotal immediately for live streaming effect
+        this.updateRowSubtotalImmediate(e.target);
         
-        // Debounce the quantity change and full cart sync
+        // Debounce both the quantity change and cart icon update
         clearTimeout(this.saveTimeout);
         this.saveTimeout = setTimeout(() => {
           this.handleQuantityChange(e.target);
         }, 1000);
+        
+        // Quick cart icon update for immediate feedback
+        clearTimeout(this.cartIconUpdateTimeout);
+        this.cartIconUpdateTimeout = setTimeout(async () => {
+          const cartData = await this.fetchCurrentCart();
+          this.updateCartIcon(cartData);
+        }, 200);
       }
     });
   }
@@ -560,6 +594,9 @@ class PersistentCart {
       
       console.log(`Quantity changed for variant ${variantId}: ${newQuantity}`);
       
+      // Immediately update the row subtotal for live streaming effect
+      this.updateRowSubtotalImmediate(input);
+      
       // Update the cart with new quantity
       await this.updateCartQuantity(variantId, newQuantity);
       
@@ -575,6 +612,124 @@ class PersistentCart {
     } finally {
       this.isHandlingChange = false;
     }
+  }
+
+  // Update row subtotal immediately for live streaming effect
+  updateRowSubtotalImmediate(input) {
+    const row = input.closest('.qo-product-card, .qo-variant-card, .table-row');
+    if (!row) return;
+    
+    const subtotalElement = row.querySelector('.qo-total-value');
+    if (!subtotalElement) return;
+    
+    const quantity = parseInt(input.value) || 0;
+    let price = 0;
+    
+    // Get price from data attribute or DOM element
+    const priceElement = row.querySelector('.qo-price-value, .price');
+    if (priceElement) {
+      if (priceElement.dataset.price) {
+        // Price in cents from Shopify
+        price = parseInt(priceElement.dataset.price) / 100;
+      } else {
+        // Parse price from text
+        const priceText = priceElement.textContent || '';
+        const cleanPrice = priceText.replace(/[₹Rs\s$£€,]/g, '');
+        price = parseFloat(cleanPrice) || 0;
+      }
+    }
+    
+    const subtotal = price * quantity;
+    const formattedSubtotal = `₹${subtotal.toFixed(2)}`;
+    
+    // Update the subtotal with enhanced live streaming animation
+    if (subtotalElement.textContent !== formattedSubtotal) {
+      // Add updating class for visual feedback
+      subtotalElement.classList.add('updating');
+      subtotalElement.textContent = formattedSubtotal;
+      
+      // Add pulse animation for extra emphasis
+      subtotalElement.classList.add('pulse');
+      
+      // Reset animations and classes after animation completes
+      setTimeout(() => {
+        subtotalElement.classList.remove('updating', 'pulse');
+      }, 300);
+    }
+    
+    console.log(`💰 Row subtotal updated live: ${quantity} × ₹${price.toFixed(2)} = ${formattedSubtotal}`);
+  }
+
+  // Shopify Polaris Toast notification helper method
+  showToast(message, type = 'info') {
+    // Remove any existing toasts
+    const existingToast = document.querySelector('.Polaris-Toast');
+    if (existingToast) {
+      existingToast.remove();
+    }
+
+    // Create Polaris toast element
+    const toast = document.createElement('div');
+    toast.className = `Polaris-Toast ${type === 'error' ? 'Polaris-Toast--error' : 'Polaris-Toast--success'}`;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+    
+    const iconSVG = type === 'error' 
+      ? `<svg viewBox="0 0 20 20" class="Polaris-Icon__Svg" focusable="false" aria-hidden="true">
+           <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM7.8 7.8a.75.75 0 0 1 1.06 0L10 8.94l1.14-1.14a.75.75 0 1 1 1.06 1.06L11.06 10l1.14 1.14a.75.75 0 1 1-1.06 1.06L10 11.06l-1.14 1.14a.75.75 0 1 1-1.06-1.06L8.94 10 7.8 8.86a.75.75 0 0 1 0-1.06z" fill="currentColor"/>
+         </svg>`
+      : `<svg viewBox="0 0 20 20" class="Polaris-Icon__Svg" focusable="false" aria-hidden="true">
+           <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.236 4.53L7.89 10.322a.75.75 0 1 0-1.28.956l2.5 3.347a.75.75 0 0 0 1.247.036l3.5-4.891z" fill="currentColor"/>
+         </svg>`;
+
+    toast.innerHTML = `
+      <div class="Polaris-Toast__Content">
+        <div class="Polaris-Toast__Icon">
+          <span class="Polaris-Icon">
+            ${iconSVG}
+          </span>
+        </div>
+        <div class="Polaris-Toast__Message">
+          ${message}
+        </div>
+        <button type="button" class="Polaris-Toast__CloseButton" aria-label="Dismiss notification">
+          <span class="Polaris-Icon">
+            <svg viewBox="0 0 20 20" class="Polaris-Icon__Svg" focusable="false" aria-hidden="true">
+              <path d="M14.54 13.46a.75.75 0 1 1-1.06 1.06L10 11.06l-3.48 3.46a.75.75 0 1 1-1.06-1.06L8.94 10 5.46 6.54a.75.75 0 1 1 1.06-1.06L10 8.94l3.46-3.46a.75.75 0 1 1 1.06 1.06L11.06 10l3.48 3.46z" fill="currentColor"/>
+            </svg>
+          </span>
+        </button>
+      </div>
+    `;
+
+    // Add to page
+    document.body.appendChild(toast);
+
+    // Add close button functionality
+    const closeButton = toast.querySelector('.Polaris-Toast__CloseButton');
+    closeButton.addEventListener('click', () => {
+      if (toast && toast.parentNode) {
+        toast.classList.add('Polaris-Toast--exiting');
+        setTimeout(() => {
+          if (toast.parentNode) {
+            toast.remove();
+          }
+        }, 200);
+      }
+    });
+
+    // Auto remove after 5 seconds (Polaris standard)
+    setTimeout(() => {
+      if (toast && toast.parentNode) {
+        toast.classList.add('Polaris-Toast--exiting');
+        setTimeout(() => {
+          if (toast.parentNode) {
+            toast.remove();
+          }
+        }, 200);
+      }
+    }, 5000);
   }
 
   // Update cart quantity via Shopify Cart API
@@ -617,16 +772,7 @@ class PersistentCart {
   // Update cart icon/badge in header
   updateCartIcon(cartData) {
     try {
-      // Calculate item count from current form if cartData is not available or empty
-      let itemCount = 0;
-      
-      if (cartData && cartData.item_count !== undefined) {
-        itemCount = cartData.item_count;
-      } else {
-        // Fallback: calculate from current quick order quantities
-        itemCount = this.calculateCurrentItemCount();
-      }
-      
+      const itemCount = cartData.item_count || 0;
       console.log(`🛒 Updating cart icon with item count: ${itemCount}`);
       
       // Common cart icon selectors used by most Shopify themes
@@ -708,6 +854,15 @@ class PersistentCart {
         }
       }));
 
+      // Trigger cart synced event for fixed cart summary
+      document.dispatchEvent(new CustomEvent('cartSynced', {
+        detail: { 
+          itemCount: itemCount, 
+          cartData: cartData,
+          timestamp: Date.now() 
+        }
+      }));
+
       // Update browser title if it shows cart count
       if (document.title.includes('(') && document.title.includes(')')) {
         const newTitle = document.title.replace(/\(\d+\)/, itemCount > 0 ? `(${itemCount})` : '');
@@ -725,85 +880,12 @@ class PersistentCart {
     return `Rs ${price.toFixed(2)}`;
   }
 
-  // Calculate current item count from quick order form
-  calculateCurrentItemCount() {
-    let totalCount = 0;
-    
-    // Get all quantity inputs from the quick order form
-    const inputs = document.querySelectorAll('input[data-variant-id], input[name^="updates["]');
-    inputs.forEach(input => {
-      const quantity = parseInt(input.value) || 0;
-      if (quantity > 0) {
-        totalCount += quantity;
-      }
-    });
-    
-    console.log(`📊 Calculated current item count from form: ${totalCount}`);
-    return totalCount;
-  }
-
-  // Calculate current total price from quick order form
-  calculateCurrentTotalPrice() {
-    let totalPrice = 0;
-    
-    // Get all quantity inputs from the quick order form
-    const inputs = document.querySelectorAll('input[data-variant-id], input[name^="updates["]');
-    inputs.forEach(input => {
-      const quantity = parseInt(input.value) || 0;
-      if (quantity > 0) {
-        // Find the price element in the same row
-        const row = input.closest('.table-row, .product-row, .variant-row');
-        if (row) {
-          const priceElement = row.querySelector('.price');
-          if (priceElement) {
-            let price = 0;
-            
-            // Priority 1: Use data-price attribute (Shopify prices in cents)
-            if (priceElement.dataset.price) {
-              const priceInCents = parseInt(priceElement.dataset.price) || 0;
-              price = priceInCents; // Keep in cents for cart data consistency
-            } else {
-              // Priority 2: Parse displayed text and convert to cents
-              const priceText = priceElement.textContent;
-              const cleanPrice = priceText.toString()
-                .replace(/[Rs\s₹$£€]/g, '')
-                .replace(/,/g, '')
-                .replace(/[^\d.]/g, '');
-              const priceInRupees = parseFloat(cleanPrice) || 0;
-              price = Math.round(priceInRupees * 100); // Convert to cents
-            }
-            
-            totalPrice += price * quantity;
-          }
-        }
-      }
-    });
-    
-    console.log(`💰 Calculated current total price from form: ${totalPrice} cents`);
-    return totalPrice;
-  }
-
   // Debounced cart icon update to handle rapid changes
   debouncedCartIconUpdate(cartData) {
     clearTimeout(this.cartIconUpdateTimeout);
     this.cartIconUpdateTimeout = setTimeout(() => {
       this.updateCartIcon(cartData);
     }, 300); // Wait 300ms before updating to batch rapid changes
-  }
-
-  // Immediate cart icon update based on current form state
-  updateCartIconImmediate() {
-    const itemCount = this.calculateCurrentItemCount();
-    const totalPrice = this.calculateCurrentTotalPrice();
-    
-    // Create a minimal cartData object for immediate updates
-    const immediateCartData = {
-      item_count: itemCount,
-      total_price: totalPrice
-    };
-    
-    this.updateCartIcon(immediateCartData);
-    console.log(`⚡ Immediate cart icon update: ${itemCount} items, Rs ${(totalPrice/100).toFixed(2)}`);
   }
 
   bindFormEvents() {
@@ -866,6 +948,8 @@ class PersistentCart {
   }
 
   // Metafield methods for quantities (localStorage removed)
+
+  // Metafield methods for quantities (from original persistent-cart.js)
   async loadQuantitiesFromMetafields() {
     try {
       console.log('Loading quantities from metafields...');
@@ -1115,7 +1199,9 @@ class QuickOrderSearch {
 
       for (let i = startPage; i <= endPage; i++) {
         const pageBtn = document.createElement('button');
-        pageBtn.className = `page-number ${i === this.currentPage ? 'active' : ''}`;
+        pageBtn.type = 'button';
+        pageBtn.className = `qo-pagination__number ${i === this.currentPage ? 'qo-pagination__number--active' : ''}`;
+        pageBtn.setAttribute('data-page', i);
         pageBtn.textContent = i;
         pageBtn.addEventListener('click', () => this.goToPage(i));
         pageNumbersContainer.appendChild(pageBtn);
@@ -1127,23 +1213,87 @@ class QuickOrderSearch {
     this.currentPage = page;
     this.showCurrentPage();
     this.updatePagination();
+    
+    // Scroll to top of the quick order container smoothly
+    const container = document.querySelector('.quick-order-container');
+    if (container) {
+      container.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+    } else {
+      // Fallback to page top if container not found
+      window.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      });
+    }
   }
 
   showCurrentPage() {
     const startIndex = (this.currentPage - 1) * this.productsPerPage;
     const endIndex = startIndex + this.productsPerPage;
 
-    // Hide all rows first
-    this.rows.forEach(row => {
-      row.style.display = 'none';
-    });
+    console.log('🔄 Showing current page:', this.currentPage, 'Range:', startIndex, '-', endIndex);
 
-    // Show filtered rows for current page
-    this.filteredRows.forEach((row, index) => {
-      if (index >= startIndex && index < endIndex) {
-        row.style.display = '';
+    // Store currently expanded variant states before hiding
+    const expandedVariants = new Map();
+    document.querySelectorAll('.qo-variants-container').forEach(container => {
+      const productId = container.dataset.productId;
+      const isExpanded = container.style.display !== 'none' && container.style.display !== '';
+      if (isExpanded && productId) {
+        expandedVariants.set(productId, true);
+        console.log('📋 Storing expanded state for product:', productId);
       }
     });
+
+    // Hide all product rows first (main product cards only, not variant containers)
+    this.rows.forEach(row => {
+      if (row.classList.contains('qo-product-card')) {
+        row.style.display = 'none';
+      }
+    });
+
+    // Also hide all variant containers initially
+    document.querySelectorAll('.qo-variants-container').forEach(container => {
+      container.style.display = 'none';
+    });
+
+    // Show filtered product rows for current page
+    this.filteredRows.forEach((row, index) => {
+      if (index >= startIndex && index < endIndex && row.classList.contains('qo-product-card')) {
+        row.style.display = '';
+        
+        // Check if this product's variants should be restored to expanded state
+        const productId = row.dataset.productId;
+        if (productId && expandedVariants.has(productId)) {
+          const variantContainer = document.querySelector(`.qo-variants-container[data-product-id="${productId}"]`);
+          const toggleButton = row.querySelector('.qo-variant-toggle, .variant-toggle-btn');
+          
+          if (variantContainer && toggleButton) {
+            // Restore expanded state
+            variantContainer.style.display = 'block';
+            toggleButton.classList.add('expanded');
+            
+            // Update toggle button text
+            const toggleText = toggleButton.querySelector('.toggle-text');
+            if (toggleText) {
+              const variantCount = toggleButton.dataset.variantCount || 'variants';
+              toggleText.textContent = `Hide ${variantCount}`;
+            }
+            
+            console.log('✅ Restored expanded variants for product:', productId);
+          }
+        }
+      }
+    });
+
+    console.log('✅ Page display updated, preserved', expandedVariants.size, 'expanded variant states');
+    
+    // Re-initialize toggle buttons for newly visible products
+    setTimeout(() => {
+      this.initializeToggleButtons();
+    }, 100);
   }
 }
 
@@ -1164,11 +1314,6 @@ class PriceCalculator {
       if (e.target.matches('.qty-input')) {
         this.updateRowTotal(e.target.closest('.table-row, .product-row, .variant-row'));
         this.updateSubtotal();
-        
-        // Update cart icon immediately like pricing
-        if (window.persistentCart) {
-          window.persistentCart.updateCartIconImmediate();
-        }
       }
     });
 
@@ -1176,11 +1321,6 @@ class PriceCalculator {
       if (e.target.matches('.qty-input')) {
         this.updateRowTotal(e.target.closest('.table-row, .product-row, .variant-row'));
         this.updateSubtotal();
-        
-        // Update cart icon immediately like pricing
-        if (window.persistentCart) {
-          window.persistentCart.updateCartIconImmediate();
-        }
       }
     });
   }
@@ -1189,8 +1329,8 @@ class PriceCalculator {
     if (!row) return;
     
     const qtyInput = row.querySelector(".qty-input");
-    const rowTotal = row.querySelector(".row-total");
-    const priceElement = row.querySelector(".price");
+    const rowTotal = row.querySelector(".row-total, .qo-total-value");
+    const priceElement = row.querySelector(".price, .qo-price-value");
     
     if (qtyInput && rowTotal && priceElement) {
       let price = 0;
@@ -1212,7 +1352,22 @@ class PriceCalculator {
       
       const quantity = parseInt(qtyInput.value) || 0;
       const total = (price * quantity).toFixed(2);
-      rowTotal.textContent = `Rs ${total}`;
+      const formattedTotal = `₹${total}`;
+      
+      // Update with enhanced live streaming animation
+      if (rowTotal.textContent !== formattedTotal) {
+        // Add updating class for visual feedback
+        rowTotal.classList.add('updating');
+        rowTotal.textContent = formattedTotal;
+        
+        // Add pulse animation for extra emphasis
+        rowTotal.classList.add('pulse');
+        
+        // Reset animations and classes after animation completes
+        setTimeout(() => {
+          rowTotal.classList.remove('updating', 'pulse');
+        }, 300);
+      }
     }
   }
 
@@ -1282,53 +1437,456 @@ class VariantToggle {
 
   init() {
     this.bindToggleEvents();
+    this.debugLastProductToggle();
+  }
+
+  debugLastProductToggle() {
+    // Specifically debug the last product's toggle button
+    setTimeout(() => {
+      const lastProductCard = document.querySelector('.qo-product-card:last-child');
+      if (lastProductCard) {
+        const toggleButton = lastProductCard.querySelector('.variant-toggle-btn');
+        if (toggleButton) {
+          console.log('🔍 Last product toggle button found:', {
+            element: toggleButton,
+            position: toggleButton.getBoundingClientRect(),
+            styles: {
+              visibility: getComputedStyle(toggleButton).visibility,
+              pointerEvents: getComputedStyle(toggleButton).pointerEvents,
+              zIndex: getComputedStyle(toggleButton).zIndex,
+              position: getComputedStyle(toggleButton).position
+            },
+            productId: toggleButton.dataset.productId
+          });
+          
+          // Add specific debug listener for this button
+          toggleButton.addEventListener('click', (e) => {
+            console.log('🚨 LAST PRODUCT BUTTON DIRECTLY CLICKED:', e);
+            e.stopPropagation();
+            this.handleToggle(toggleButton);
+          });
+        } else {
+          console.log('🚨 No toggle button found in last product card');
+        }
+      }
+    }, 1000);
   }
 
   bindToggleEvents() {
-    // Add click event listeners to all variant toggle buttons
+    console.log('🔗 Binding variant toggle events...');
+    
+    // Initialize all toggle buttons with proper attributes
+    this.initializeToggleButtons();
+    
+    // Main event delegation for toggle buttons
     document.addEventListener('click', (e) => {
-      if (e.target.closest('.variant-toggle-btn')) {
-        this.handleToggle(e.target.closest('.variant-toggle-btn'));
+      const toggleButton = e.target.closest('.variant-toggle-btn, .qo-variant-toggle');
+      
+      if (toggleButton) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        console.log('🎯 Variant toggle clicked:', {
+          productId: toggleButton.dataset.productId,
+          button: toggleButton,
+          coordinates: { x: e.clientX, y: e.clientY },
+          isAccessible: this.isToggleAccessible(toggleButton)
+        });
+        
+        this.handleToggle(toggleButton);
       }
     });
+
+    // Keyboard accessibility for toggle buttons
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        const toggleButton = e.target.closest('.variant-toggle-btn, .qo-variant-toggle');
+        if (toggleButton) {
+          e.preventDefault();
+          this.handleToggle(toggleButton);
+        }
+      }
+    });
+
+    // Debug listener for troubleshooting specific products
+    this.bindDebugListeners();
+  }
+
+  initializeToggleButtons() {
+    const toggleButtons = document.querySelectorAll('.variant-toggle-btn, .qo-variant-toggle');
+    console.log(`🔧 Initializing ${toggleButtons.length} toggle buttons...`);
+    
+    toggleButtons.forEach((button, index) => {
+      const productId = button.dataset.productId;
+      
+      if (!productId) {
+        console.warn(`⚠️ Toggle button ${index} missing product ID:`, button);
+        return;
+      }
+      
+      // Ensure proper accessibility attributes
+      if (!button.hasAttribute('aria-expanded')) {
+        button.setAttribute('aria-expanded', 'false');
+      }
+      
+      if (!button.hasAttribute('aria-controls')) {
+        button.setAttribute('aria-controls', `variants-${productId}`);
+      }
+      
+      // Ensure button is focusable
+      if (!button.hasAttribute('tabindex')) {
+        button.setAttribute('tabindex', '0');
+      }
+      
+      // Add role if missing
+      if (!button.hasAttribute('role')) {
+        button.setAttribute('role', 'button');
+      }
+      
+      console.log(`✅ Toggle button initialized for product: ${productId}`);
+    });
+  }
+
+  isToggleAccessible(button) {
+    const rect = button.getBoundingClientRect();
+    const style = getComputedStyle(button);
+    
+    return {
+      visible: style.visibility !== 'hidden',
+      displayed: style.display !== 'none',
+      clickable: style.pointerEvents !== 'none',
+      inViewport: rect.top >= 0 && rect.left >= 0 && 
+                 rect.bottom <= window.innerHeight && 
+                 rect.right <= window.innerWidth,
+      hasSize: rect.width > 0 && rect.height > 0
+    };
+  }
+
+  bindDebugListeners() {
+    // Add debug listener for last visible product specifically
+    setTimeout(() => {
+      const visibleProducts = Array.from(document.querySelectorAll('.qo-product-card'))
+        .filter(card => getComputedStyle(card).display !== 'none');
+      
+      const lastProduct = visibleProducts[visibleProducts.length - 1];
+      if (lastProduct) {
+        const toggleButton = lastProduct.querySelector('.variant-toggle-btn, .qo-variant-toggle');
+        if (toggleButton) {
+          console.log('🔍 Last product toggle debug info:', {
+            productId: toggleButton.dataset.productId,
+            accessibility: this.isToggleAccessible(toggleButton),
+            position: toggleButton.getBoundingClientRect()
+          });
+        }
+      }
+    }, 1000);
   }
 
   handleToggle(button) {
     const productId = button.dataset.productId;
-    const variantRows = document.querySelector(`.variant-rows[data-product-id="${productId}"]`);
-    const toggleText = button.querySelector('.toggle-text');
-    const toggleIcon = button.querySelector('.toggle-icon');
+    const productCard = button.closest('.qo-product-card');
     
-    if (!variantRows) {
-      console.warn('Variant rows not found for product:', productId);
+    if (!productId) {
+      console.error('❌ No product ID found on toggle button:', button);
       return;
     }
-
-    // Toggle visibility
-    if (variantRows.style.display === 'none' || !variantRows.style.display) {
-      // Show variants
-      variantRows.style.display = 'block';
-      toggleText.textContent = 'Hide Variants';
-      toggleIcon.textContent = '▲';
-      button.classList.add('expanded');
+    
+    console.log('🔄 Handling variant toggle for product:', productId);
+    
+    // Check if the product is completely out of stock
+    if (productCard && productCard.classList.contains('qo-product-out-of-stock')) {
+      // Check if ALL variants are out of stock
+      const variantContainer = document.querySelector(`.qo-variants-container[data-product-id="${productId}"]`);
+      if (variantContainer) {
+        const availableVariants = variantContainer.querySelectorAll('.qo-status-active');
+        if (availableVariants.length === 0) {
+          this.showToast('All variants of this product are out of stock', 'error');
+          return;
+        }
+      }
+    }
+    
+    // Try multiple selectors to find variant container (production-level robustness)
+    const selectors = [
+      `.qo-variants-container[data-product-id="${productId}"]`,
+      `.variant-rows[data-product-id="${productId}"]`,
+      `[data-product-id="${productId}"].qo-variants-container`,
+      `[data-product-id="${productId}"].variant-rows`
+    ];
+    
+    let variantContainer = null;
+    let selectorUsed = '';
+    
+    for (const selector of selectors) {
+      variantContainer = document.querySelector(selector);
+      if (variantContainer) {
+        selectorUsed = selector;
+        console.log('✅ Found variant container with selector:', selector);
+        break;
+      }
+    }
+    
+    if (!variantContainer) {
+      console.error('❌ No variant container found for product:', productId);
+      console.log('❌ Attempted selectors:', selectors);
       
-      console.log(`Showing variants for product ${productId}`);
+      // Show helpful error to user
+      this.showToast('Unable to load product variants. Please refresh the page.', 'error');
+      return;
+    }
+    
+    // Determine if this is the last visible product for special handling
+    const visibleProducts = Array.from(document.querySelectorAll('.qo-product-card')).filter(card => 
+      getComputedStyle(card).display !== 'none'
+    );
+    const isLastVisibleProduct = productCard === visibleProducts[visibleProducts.length - 1];
+    
+    console.log('🔍 Product position info:', {
+      productId,
+      isLastVisibleProduct,
+      visibleProductsCount: visibleProducts.length,
+      selectorUsed
+    });
+    
+    this.toggleVariantRows(variantContainer, button, productId, isLastVisibleProduct);
+  }
+
+  toggleVariantRows(variantContainer, button, productId, isLastVisibleProduct = false) {
+    const isCurrentlyVisible = variantContainer.style.display !== 'none' && variantContainer.style.display !== '';
+    const toggleText = button.querySelector('.toggle-text');
+    const toggleIcon = button.querySelector('.toggle-icon, .qo-chevron');
+    
+    console.log('� Toggling variants:', {
+      productId,
+      isCurrentlyVisible,
+      isLastVisibleProduct,
+      containerElement: variantContainer
+    });
+
+    if (!isCurrentlyVisible) {
+      // Show variants with Polaris-compliant animation
+      this.showVariants(variantContainer, button, productId, isLastVisibleProduct);
     } else {
       // Hide variants
-      variantRows.style.display = 'none';
-      toggleText.textContent = 'Show Variants';
-      toggleIcon.textContent = '▼';
-      button.classList.remove('expanded');
-      
-      console.log(`Hiding variants for product ${productId}`);
+      this.hideVariants(variantContainer, button, productId, isLastVisibleProduct);
     }
 
-    // Update subtotal in case any hidden variant quantities affect the total
+    // Update button state and accessibility
+    this.updateToggleButton(button, !isCurrentlyVisible, productId);
+
+    // Update subtotal calculation after variant toggle
+    this.debounceSubtotalUpdate();
+  }
+
+  showVariants(variantContainer, button, productId, isLastVisibleProduct) {
+    // Polaris-style smooth expansion
+    variantContainer.style.display = 'block';
+    variantContainer.style.opacity = '0';
+    variantContainer.style.transform = 'translateY(-10px)';
+    
+    // Add expanded state class for tree connector highlighting
+    variantContainer.classList.add('qo-variants-expanded');
+    
+    // Special handling for last visible product to prevent overlap with fixed cart
+    if (isLastVisibleProduct) {
+      this.handleLastProductVariants(variantContainer, true);
+    }
+    
+    // Smooth fade-in animation
+    requestAnimationFrame(() => {
+      variantContainer.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+      variantContainer.style.opacity = '1';
+      variantContainer.style.transform = 'translateY(0)';
+    });
+    
+    // Focus management for accessibility
     setTimeout(() => {
+      const firstVariantInput = variantContainer.querySelector('.qo-quantity-input:not([disabled])');
+      if (firstVariantInput && document.activeElement === button) {
+        firstVariantInput.focus();
+      }
+    }, 250);
+    
+    console.log(`✅ Variants shown for product: ${productId}${isLastVisibleProduct ? ' (LAST VISIBLE)' : ''}`);
+    
+    // Show success toast using Polaris styling
+    this.showToast(`Variants expanded for ${this.getProductTitle(productId)}`, 'success', 2000);
+  }
+
+  hideVariants(variantContainer, button, productId, isLastVisibleProduct) {
+    // Polaris-style smooth collapse
+    variantContainer.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+    variantContainer.style.opacity = '0';
+    variantContainer.style.transform = 'translateY(-10px)';
+    
+    setTimeout(() => {
+      variantContainer.style.display = 'none';
+      variantContainer.classList.remove('qo-variants-expanded');
+      
+      // Reset special styling for last product
+      if (isLastVisibleProduct) {
+        this.handleLastProductVariants(variantContainer, false);
+      }
+      
+      // Reset transition styles
+      variantContainer.style.transition = '';
+      variantContainer.style.transform = '';
+      variantContainer.style.opacity = '';
+    }, 200);
+    
+    console.log(`✅ Variants hidden for product: ${productId}${isLastVisibleProduct ? ' (LAST VISIBLE)' : ''}`);
+  }
+
+  handleLastProductVariants(variantContainer, isExpanding) {
+    if (isExpanding) {
+      // Minimal styling for last product - only add space if really needed
+      variantContainer.classList.add('qo-last-product-variants');
+      
+      // Only add bottom spacer if there's a fixed cart that might overlap
+      const fixedCart = document.querySelector('.qo-fixed-cart-summary');
+      if (fixedCart) {
+        const bottomSpacer = document.querySelector('.qo-bottom-spacer');
+        if (bottomSpacer) {
+          bottomSpacer.classList.add('qo-last-variants-expanded');
+        }
+      }
+      
+      // Smart scroll to keep variants visible (reduced delay)
+      setTimeout(() => {
+        this.ensureVariantsVisible(variantContainer);
+      }, 150);
+      
+    } else {
+      // Clean reset - remove all extra spacing
+      variantContainer.style.marginBottom = '';
+      variantContainer.classList.remove('qo-last-product-variants');
+      
+      const bottomSpacer = document.querySelector('.qo-bottom-spacer');
+      if (bottomSpacer) {
+        bottomSpacer.classList.remove('qo-last-variants-expanded');
+      }
+    }
+  }
+
+  ensureVariantsVisible(variantContainer) {
+    const containerRect = variantContainer.getBoundingClientRect();
+    const windowHeight = window.innerHeight;
+    const fixedCartHeight = document.querySelector('.qo-fixed-cart-summary')?.offsetHeight || 100;
+    const buffer = 20;
+    
+    // Check if variants are being cut off by fixed cart
+    if (containerRect.bottom > windowHeight - fixedCartHeight - buffer) {
+      const scrollAmount = containerRect.bottom - windowHeight + fixedCartHeight + buffer;
+      
+      window.scrollBy({
+        top: scrollAmount,
+        behavior: 'smooth'
+      });
+      
+      console.log('📜 Auto-scrolled to ensure last product variants are visible');
+    }
+  }
+
+  updateToggleButton(button, isExpanded, productId) {
+    const toggleText = button.querySelector('.toggle-text');
+    const toggleIcon = button.querySelector('.toggle-icon, .qo-chevron');
+    
+    // Update button state
+    if (isExpanded) {
+      button.classList.add('expanded', 'qo-variant-expanded');
+      button.setAttribute('aria-expanded', 'true');
+    } else {
+      button.classList.remove('expanded', 'qo-variant-expanded');
+      button.setAttribute('aria-expanded', 'false');
+    }
+    
+    // Update text content
+    if (toggleText) {
+      const variantCount = button.dataset.variantCount || 'variants';
+      toggleText.textContent = isExpanded ? `Hide ${variantCount}` : `Show ${variantCount}`;
+    }
+    
+    // Animate chevron icon
+    if (toggleIcon) {
+      toggleIcon.style.transform = isExpanded ? 'rotate(180deg)' : 'rotate(0deg)';
+      toggleIcon.style.transition = 'transform 0.2s ease';
+    }
+  }
+
+  getProductTitle(productId) {
+    const productCard = document.querySelector(`.qo-product-card[data-product-id="${productId}"]`);
+    const titleElement = productCard?.querySelector('.qo-product-title');
+    return titleElement?.textContent || 'Product';
+  }
+
+  debounceSubtotalUpdate() {
+    // Debounce subtotal updates to prevent excessive calculations
+    clearTimeout(this.subtotalUpdateTimer);
+    this.subtotalUpdateTimer = setTimeout(() => {
       if (window.priceCalculator) {
         window.priceCalculator.updateSubtotal();
       }
     }, 100);
+  }
+
+  // Production Debug Method - Call from console if needed
+  debugVariantToggle(productId = null) {
+    console.log('🔍 VARIANT TOGGLE DEBUG REPORT');
+    console.log('=================================');
+    
+    const toggleButtons = document.querySelectorAll('.variant-toggle-btn, .qo-variant-toggle');
+    const variantContainers = document.querySelectorAll('.qo-variants-container, .variant-rows');
+    
+    console.log(`📊 Found ${toggleButtons.length} toggle buttons and ${variantContainers.length} variant containers`);
+    
+    toggleButtons.forEach((button, index) => {
+      const btnProductId = button.dataset.productId;
+      const isTarget = !productId || btnProductId === productId;
+      
+      if (isTarget) {
+        const accessibility = this.isToggleAccessible(button);
+        const variantContainer = document.querySelector(`.qo-variants-container[data-product-id="${btnProductId}"], .variant-rows[data-product-id="${btnProductId}"]`);
+        
+        console.log(`\n🔍 Button ${index + 1} (Product: ${btnProductId}):`);
+        console.log('   Accessibility:', accessibility);
+        console.log('   Has variant container:', !!variantContainer);
+        console.log('   Button element:', button);
+        
+        if (variantContainer) {
+          console.log('   Container visible:', variantContainer.style.display !== 'none');
+          console.log('   Container element:', variantContainer);
+        }
+      }
+    });
+    
+    // Test last product specifically
+    const visibleProducts = Array.from(document.querySelectorAll('.qo-product-card'))
+      .filter(card => getComputedStyle(card).display !== 'none');
+    
+    const lastProduct = visibleProducts[visibleProducts.length - 1];
+    if (lastProduct) {
+      const lastProductId = lastProduct.dataset.productId;
+      console.log(`\n🚨 LAST PRODUCT ANALYSIS (ID: ${lastProductId}):`);
+      
+      const toggleButton = lastProduct.querySelector('.variant-toggle-btn, .qo-variant-toggle');
+      if (toggleButton) {
+        console.log('   Toggle button found:', toggleButton);
+        console.log('   Accessibility:', this.isToggleAccessible(toggleButton));
+        
+        // Test click functionality
+        console.log('   Testing click...');
+        toggleButton.click();
+      } else {
+        console.log('   ❌ No toggle button found in last product!');
+      }
+    }
+    
+    console.log('\n=================================');
+    return {
+      toggleButtons: toggleButtons.length,
+      variantContainers: variantContainers.length,
+      lastProductId: lastProduct?.dataset.productId
+    };
   }
 }
 
@@ -1348,7 +1906,18 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize variant toggle functionality
   window.variantToggle = new VariantToggle();
   
+  // Global debug function for production troubleshooting
+  window.debugVariants = (productId) => {
+    if (window.persistentCart) {
+      return window.persistentCart.debugVariantToggle(productId);
+    } else {
+      console.error('❌ PersistentCart not initialized');
+      return null;
+    }
+  };
+  
   console.log('✅ All Quick Order functionality initialized');
+  console.log('🔧 Debug function available: window.debugVariants(productId)');
 });
 
 // Global function to reset variant quantity (can be called from anywhere)
@@ -1390,3 +1959,564 @@ window.updateCartIcon = async function() {
     console.warn('PersistentCart not initialized yet');
   }
 };
+
+// Add helper method to PersistentCart prototype
+PersistentCart.prototype.isLastProductCard = function(productCard) {
+  if (!productCard) return false;
+  
+  const allProducts = document.querySelectorAll('.qo-product-card');
+  const productIndex = Array.from(allProducts).indexOf(productCard);
+  const isLast = productIndex === allProducts.length - 1;
+  
+  console.log('🔍 Product position check:', {
+    productIndex: productIndex + 1,
+    totalProducts: allProducts.length,
+    isLast: isLast
+  });
+  
+  return isLast;
+};
+
+// Fixed Cart Summary Handler
+class FixedCartSummary {
+  constructor() {
+    this.fixedCartElement = document.getElementById('fixed-cart-summary');
+    this.itemCountElement = document.getElementById('cart-item-count');
+    this.totalAmountElement = document.getElementById('fixed-subtotal-amount');
+    this.clearAllBtn = document.getElementById('clear-all-btn');
+    this.isUpdating = false; // Prevent simultaneous updates
+    
+    this.init();
+  }
+
+  async init() {
+    // Bind clear all button
+    if (this.clearAllBtn) {
+      this.clearAllBtn.addEventListener('click', () => this.clearAllQuantities());
+    }
+
+    // Wait for persistent cart to load, then sync with cart data
+    this.waitForPersistentCartAndSync();
+
+    // Listen for quantity changes with debouncing
+    this.updateTimeout = null;
+    document.addEventListener('input', (e) => {
+      if (e.target.classList.contains('qty-input')) {
+        // Update row subtotal immediately for live streaming effect
+        this.updateRowSubtotalImmediate(e.target);
+        
+        this.validateStockQuantity(e.target);
+        this.debouncedUpdateFixedCartSummary();
+      }
+    });
+
+    // Handle clicks on disabled quantity inputs
+    document.addEventListener('focus', (e) => {
+      if (e.target.classList.contains('qty-input') && e.target.disabled) {
+        e.target.blur(); // Remove focus immediately
+        this.showToast('This product is out of stock', 'error');
+      }
+    });
+
+    // Prevent typing in disabled quantity inputs
+    document.addEventListener('keydown', (e) => {
+      if (e.target.classList.contains('qty-input') && e.target.disabled) {
+        e.preventDefault();
+        this.showToast('This product is out of stock', 'error');
+      }
+    });
+
+    // Listen for cart sync events with debouncing
+    document.addEventListener('cartSynced', () => {
+      // Clear any pending updates to avoid conflicts
+      if (this.updateTimeout) {
+        clearTimeout(this.updateTimeout);
+      }
+      // Sync with cart data directly (no debouncing for cart sync)
+      setTimeout(() => this.syncWithCart(), 100);
+    });
+
+    // Bind quantity button events
+    this.bindQuantityButtons();
+  }
+
+  debouncedUpdateFixedCartSummary() {
+    // Clear any existing timeout
+    if (this.updateTimeout) {
+      clearTimeout(this.updateTimeout);
+    }
+    
+    // Set a new timeout to update after user stops typing/clicking
+    this.updateTimeout = setTimeout(() => {
+      this.updateFixedCartSummary();
+    }, 150);
+  }
+
+  // Update row subtotal immediately (same as in PersistentCart class)
+  updateRowSubtotalImmediate(input) {
+    const row = input.closest('.qo-product-card, .qo-variant-card, .table-row');
+    if (!row) return;
+    
+    const subtotalElement = row.querySelector('.qo-total-value');
+    if (!subtotalElement) return;
+    
+    const quantity = parseInt(input.value) || 0;
+    let price = 0;
+    
+    // Get price from data attribute or DOM element
+    const priceElement = row.querySelector('.qo-price-value, .price');
+    if (priceElement) {
+      if (priceElement.dataset.price) {
+        // Price in cents from Shopify
+        price = parseInt(priceElement.dataset.price) / 100;
+      } else {
+        // Parse price from text
+        const priceText = priceElement.textContent || '';
+        const cleanPrice = priceText.replace(/[₹Rs\s$£€,]/g, '');
+        price = parseFloat(cleanPrice) || 0;
+      }
+    }
+    
+    const subtotal = price * quantity;
+    const formattedSubtotal = `₹${subtotal.toFixed(2)}`;
+    
+    // Update the subtotal with enhanced live streaming animation
+    if (subtotalElement.textContent !== formattedSubtotal) {
+      // Add updating class for visual feedback
+      subtotalElement.classList.add('updating');
+      subtotalElement.textContent = formattedSubtotal;
+      
+      // Add pulse animation for extra emphasis
+      subtotalElement.classList.add('pulse');
+      
+      // Reset animations and classes after animation completes
+      setTimeout(() => {
+        subtotalElement.classList.remove('updating', 'pulse');
+      }, 300);
+    }
+    
+    console.log(`💰 Row subtotal updated live: ${quantity} × ₹${price.toFixed(2)} = ${formattedSubtotal}`);
+  }
+
+  bindQuantityButtons() {
+    // Handle increase buttons
+    document.addEventListener('click', (e) => {
+      if (e.target.closest('.qo-qty-increase')) {
+        e.preventDefault();
+        const input = e.target.closest('.qo-quantity-input-wrapper').querySelector('.qo-quantity-input');
+        const button = e.target.closest('.qo-qty-increase');
+        
+        if (button.disabled || input.disabled) {
+          this.showToast('This product is out of stock', 'error');
+          return;
+        }
+        
+        if (input && !input.disabled) {
+          const currentValue = parseInt(input.value) || 0;
+          input.value = currentValue + 1;
+          
+          // Update row subtotal immediately for live streaming effect
+          this.updateRowSubtotalImmediate(input);
+          
+          // Update immediately for button clicks (no debouncing needed)
+          this.validateStockQuantity(input);
+          this.updateFixedCartSummary();
+          
+          // Trigger input event for other listeners
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+    });
+
+    // Handle decrease buttons
+    document.addEventListener('click', (e) => {
+      if (e.target.closest('.qo-qty-decrease')) {
+        e.preventDefault();
+        const input = e.target.closest('.qo-quantity-input-wrapper').querySelector('.qo-quantity-input');
+        const button = e.target.closest('.qo-qty-decrease');
+        
+        if (button.disabled || input.disabled) {
+          this.showToast('This product is out of stock', 'error');
+          return;
+        }
+        
+        if (input && !input.disabled) {
+          const currentValue = parseInt(input.value) || 0;
+          if (currentValue > 0) {
+            input.value = currentValue - 1;
+            
+            // Update row subtotal immediately for live streaming effect
+            this.updateRowSubtotalImmediate(input);
+            
+            // Update immediately for button clicks (no debouncing needed)
+            this.validateStockQuantity(input);
+            this.updateFixedCartSummary();
+            
+            // Trigger input event for other listeners
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        }
+      }
+    });
+  }
+
+  async waitForPersistentCartAndSync() {
+    // Wait for persistent cart to be initialized
+    let attempts = 0;
+    const maxAttempts = 50; // 5 seconds max wait
+    
+    const checkAndSync = async () => {
+      if (window.persistentCart) {
+        console.log('✅ PersistentCart found, syncing fixed cart summary...');
+        await this.syncWithCart();
+        return;
+      }
+      
+      attempts++;
+      if (attempts < maxAttempts) {
+        setTimeout(checkAndSync, 100);
+      } else {
+        console.warn('⚠️ PersistentCart not found after 5 seconds, using fallback sync');
+        this.updateFixedCartSummary();
+      }
+    };
+    
+    checkAndSync();
+  }
+
+  async syncWithCart() {
+    try {
+      // Get current cart data
+      const response = await fetch('/cart.js');
+      const cartData = await response.json();
+      
+      console.log('🛒 Syncing fixed cart with cart data:', cartData);
+      
+      let totalItems = 0;
+      let totalAmount = 0;
+      
+      if (cartData && cartData.items) {
+        cartData.items.forEach(item => {
+          totalItems += item.quantity;
+          totalAmount += item.final_line_price;
+        });
+      }
+      
+      // Update display atomically to prevent flickering
+      const itemText = totalItems === 1 ? 'item' : 'items';
+      const newItemText = `${totalItems} ${itemText} in cart`;
+      const formattedAmount = this.formatMoney(totalAmount);
+      
+      requestAnimationFrame(() => {
+        if (this.itemCountElement) {
+          this.itemCountElement.textContent = newItemText;
+        }
+        
+        if (this.totalAmountElement) {
+          this.totalAmountElement.textContent = formattedAmount;
+        }
+        
+        // Always show fixed cart
+        if (this.fixedCartElement) {
+          this.fixedCartElement.style.display = 'block';
+        }
+      });
+      
+      console.log(`✅ Fixed cart synced: ${totalItems} items, ${this.formatMoney(totalAmount)}`);
+      
+    } catch (error) {
+      console.error('❌ Error syncing fixed cart with cart data:', error);
+      // Fallback to calculating from quantity inputs
+      this.updateFixedCartSummary();
+    }
+  }
+
+  updateFixedCartSummary() {
+    // Prevent simultaneous updates
+    if (this.isUpdating) return;
+    this.isUpdating = true;
+
+    const quantityInputs = document.querySelectorAll('.qty-input');
+    let totalItems = 0;
+    let totalAmount = 0;
+
+    quantityInputs.forEach(input => {
+      const quantity = parseInt(input.value) || 0;
+      if (quantity > 0) {
+        totalItems += quantity;
+        
+        // Get price from data attribute or calculate
+        const priceElement = input.closest('.qo-product-card, .qo-variant-card')?.querySelector('[data-price]');
+        if (priceElement) {
+          const price = parseFloat(priceElement.dataset.price) || 0;
+          totalAmount += price * quantity;
+        }
+      }
+    });
+
+    // Calculate new values
+    const itemText = totalItems === 1 ? 'item' : 'items';
+    const newItemText = `${totalItems} ${itemText} in cart`;
+    const newAmountText = this.formatMoney(totalAmount);
+
+    // Update both elements atomically to prevent flickering
+    requestAnimationFrame(() => {
+      if (this.itemCountElement) {
+        this.itemCountElement.textContent = newItemText;
+      }
+
+      if (this.totalAmountElement) {
+        this.totalAmountElement.textContent = newAmountText;
+      }
+
+      // Always show fixed cart (never hide)
+      if (this.fixedCartElement) {
+        this.fixedCartElement.style.display = 'block';
+      }
+    });
+
+    // Reset update flag
+    this.isUpdating = false;
+  }
+
+  async clearAllQuantities() {
+    // Show loading state
+    const clearBtn = document.getElementById('clear-all-btn');
+    const originalText = clearBtn ? clearBtn.textContent : '';
+    if (clearBtn) {
+      clearBtn.textContent = 'Clearing...';
+      clearBtn.disabled = true;
+    }
+
+    try {
+      // Get current cart data to identify quick order items
+      const cartData = await this.getCurrentCart();
+      const quickOrderVariants = this.getQuickOrderVariants();
+      
+      // Prepare updates object to remove quick order items from cart
+      const updates = {};
+      if (cartData && cartData.items) {
+        cartData.items.forEach(item => {
+          const variantId = item.variant_id?.toString() || item.id?.toString();
+          if (quickOrderVariants.has(variantId)) {
+            updates[variantId] = 0; // Set quantity to 0 to remove from cart
+          }
+        });
+      }
+
+      // Update cart to remove quick order items
+      if (Object.keys(updates).length > 0) {
+        const response = await fetch('/cart/update.js', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ updates })
+        });
+
+        if (response.ok) {
+          const updatedCartData = await response.json();
+          console.log('✅ Cart cleared of quick order items');
+          
+          // Trigger cart updated event for theme compatibility
+          document.dispatchEvent(new CustomEvent('cart:updated', {
+            detail: { cart: updatedCartData }
+          }));
+          
+          // Update cart icon immediately
+          if (window.persistentCart) {
+            window.persistentCart.updateCartIcon(updatedCartData);
+          }
+        } else {
+          console.error('Failed to clear cart items');
+          this.showToast('Failed to clear cart items', 'error');
+        }
+      }
+
+      // Clear quantities in quick order form
+      const quantityInputs = document.querySelectorAll('.qty-input');
+      quantityInputs.forEach(input => {
+        input.value = '0';
+        // Trigger change event for other listeners
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+
+      // Update row totals
+      document.querySelectorAll('.row-total').forEach(total => {
+        total.textContent = '₹0.00';
+      });
+
+      // Update main subtotal
+      const subtotalElement = document.getElementById('subtotal-amount');
+      if (subtotalElement) {
+        subtotalElement.textContent = '₹0.00';
+      }
+
+      // Update fixed cart summary
+      this.updateFixedCartSummary();
+
+      // Clear metafields by saving empty quantities to server
+      if (window.persistentCart && typeof window.persistentCart.saveQuantitiesToMetafields === 'function') {
+        const emptyQuantities = {};
+        await window.persistentCart.saveQuantitiesToMetafields(emptyQuantities);
+      }
+
+      console.log('✅ All quantities cleared from quick order and cart');
+      this.showToast('Cart cleared successfully', 'success');
+
+    } catch (error) {
+      console.error('Error clearing cart:', error);
+      this.showToast('Error clearing cart', 'error');
+    } finally {
+      // Restore button state
+      if (clearBtn) {
+        clearBtn.textContent = originalText;
+        clearBtn.disabled = false;
+      }
+    }
+  }
+
+  validateStockQuantity(input) {
+    const enteredQuantity = parseInt(input.value) || 0;
+    const stockQuantity = parseInt(input.dataset.stockQuantity) || 999999;
+    const inventoryManagement = input.dataset.inventoryManagement;
+    
+    // Only validate if stock tracking is enabled
+    if (inventoryManagement === 'shopify' && stockQuantity !== 999999) {
+      if (enteredQuantity > stockQuantity) {
+        // Show error toast
+        this.showStockErrorToast(enteredQuantity, stockQuantity);
+        
+        // Set input to maximum available stock
+        input.value = stockQuantity;
+        
+        // Trigger input event to update calculations
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+  }
+
+  showStockErrorToast(requested, available) {
+    const message = `Quantity unavailable: You requested ${requested} but only ${available} are in stock. Quantity adjusted to maximum available.`;
+    this.showToast(message, 'error');
+  }
+
+  formatMoney(cents) {
+    // Shopify returns prices in cents, convert to currency format
+    const amount = cents / 100;
+    
+    // Use the same currency symbol as shown in your template (₹ for INR or $ for USD)
+    // Check if we have a price element to determine currency symbol
+    const existingPriceElement = document.querySelector('.qo-price-value');
+    if (existingPriceElement && existingPriceElement.textContent.includes('₹')) {
+      return '₹' + amount.toFixed(2);
+    } else {
+      return '$' + amount.toFixed(2);
+    }
+  }
+
+  // Helper method to get current cart data
+  async getCurrentCart() {
+    try {
+      const response = await fetch('/cart.js');
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (error) {
+      console.error('Error fetching cart:', error);
+    }
+    return { items: [] };
+  }
+
+  // Helper method to get all variant IDs from quick order form
+  getQuickOrderVariants() {
+    const variants = new Set();
+    const quantityInputs = document.querySelectorAll('.qty-input');
+    
+    quantityInputs.forEach(input => {
+      const variantId = input.dataset.variantId || input.getAttribute('data-variant-id');
+      if (variantId) {
+        variants.add(variantId.toString());
+      }
+    });
+    
+    return variants;
+  }
+
+  // Shopify Polaris Toast notification helper method (FixedCartSummary)
+  showToast(message, type = 'success') {
+    // Remove any existing toasts
+    const existingToast = document.querySelector('.Polaris-Toast');
+    if (existingToast) {
+      existingToast.remove();
+    }
+
+    // Create Polaris toast element
+    const toast = document.createElement('div');
+    toast.className = `Polaris-Toast ${type === 'error' ? 'Polaris-Toast--error' : 'Polaris-Toast--success'}`;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+    
+    const iconSVG = type === 'error' 
+      ? `<svg viewBox="0 0 20 20" class="Polaris-Icon__Svg" focusable="false" aria-hidden="true">
+           <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM7.8 7.8a.75.75 0 0 1 1.06 0L10 8.94l1.14-1.14a.75.75 0 1 1 1.06 1.06L11.06 10l1.14 1.14a.75.75 0 1 1-1.06 1.06L10 11.06l-1.14 1.14a.75.75 0 1 1-1.06-1.06L8.94 10 7.8 8.86a.75.75 0 0 1 0-1.06z" fill="currentColor"/>
+         </svg>`
+      : `<svg viewBox="0 0 20 20" class="Polaris-Icon__Svg" focusable="false" aria-hidden="true">
+           <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.236 4.53L7.89 10.322a.75.75 0 1 0-1.28.956l2.5 3.347a.75.75 0 0 0 1.247.036l3.5-4.891z" fill="currentColor"/>
+         </svg>`;
+
+    toast.innerHTML = `
+      <div class="Polaris-Toast__Content">
+        <div class="Polaris-Toast__Icon">
+          <span class="Polaris-Icon">
+            ${iconSVG}
+          </span>
+        </div>
+        <div class="Polaris-Toast__Message">
+          ${message}
+        </div>
+        <button type="button" class="Polaris-Toast__CloseButton" aria-label="Dismiss notification">
+          <span class="Polaris-Icon">
+            <svg viewBox="0 0 20 20" class="Polaris-Icon__Svg" focusable="false" aria-hidden="true">
+              <path d="M14.54 13.46a.75.75 0 1 1-1.06 1.06L10 11.06l-3.48 3.46a.75.75 0 1 1-1.06-1.06L8.94 10 5.46 6.54a.75.75 0 1 1 1.06-1.06L10 8.94l3.46-3.46a.75.75 0 1 1 1.06 1.06L11.06 10l3.48 3.46z" fill="currentColor"/>
+            </svg>
+          </span>
+        </button>
+      </div>
+    `;
+
+    // Add to page
+    document.body.appendChild(toast);
+
+    // Add close button functionality
+    const closeButton = toast.querySelector('.Polaris-Toast__CloseButton');
+    closeButton.addEventListener('click', () => {
+      if (toast && toast.parentNode) {
+        toast.classList.add('Polaris-Toast--exiting');
+        setTimeout(() => {
+          if (toast.parentNode) {
+            toast.remove();
+          }
+        }, 200);
+      }
+    });
+
+    // Auto remove after 5 seconds (Polaris standard)
+    setTimeout(() => {
+      if (toast && toast.parentNode) {
+        toast.classList.add('Polaris-Toast--exiting');
+        setTimeout(() => {
+          if (toast.parentNode) {
+            toast.remove();
+          }
+        }, 200);
+      }
+    }, 5000);
+  }
+}
+
+// Initialize Fixed Cart Summary when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  window.fixedCartSummary = new FixedCartSummary();
+});
