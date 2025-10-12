@@ -65,23 +65,20 @@ class PersistentCart {
         console.log('Metafield quantities:', metafieldQuantities);
       }
       
-      // Metafield quantities take priority - restore saved items first
-      let finalQuantities = {};
+      // IMPORTANT: Cart is the source of truth!
+      // Use cart quantities and sync metafields to match cart state
+      // This ensures deleted items stay deleted and don't reappear
+      let finalQuantities = { ...cartQuantities };
       
-      if (this.isCustomer && Object.keys(metafieldQuantities).length > 0) {
-        // Use metafield quantities as the primary source
-        finalQuantities = { ...metafieldQuantities };
-        console.log('Using metafield quantities as primary source:', finalQuantities);
-        
-        // If cart has different quantities, merge them (cart wins for conflicts)
-        if (Object.keys(cartQuantities).length > 0) {
-          console.log('Merging with current cart quantities...');
-          finalQuantities = { ...finalQuantities, ...cartQuantities };
+      console.log('Using cart as source of truth:', finalQuantities);
+      
+      // If cart is different from metafields, update metafields to match cart
+      if (this.isCustomer) {
+        const metafieldsNeedUpdate = JSON.stringify(cartQuantities) !== JSON.stringify(metafieldQuantities);
+        if (metafieldsNeedUpdate) {
+          console.log('⚠️ Metafields out of sync with cart, updating metafields to match cart...');
+          await this.saveQuantitiesToMetafields(cartQuantities);
         }
-      } else {
-        // No metafield data, use cart quantities
-        finalQuantities = cartQuantities;
-        console.log('No metafield data, using cart quantities:', finalQuantities);
       }
       
       console.log('Final quantities to display:', finalQuantities);
@@ -89,39 +86,15 @@ class PersistentCart {
       // Restore quantities to the form
       this.restoreQuantitiesToInputs(finalQuantities);
       
-      // If we have metafield quantities that aren't in the cart, restore them to cart
-      if (this.isCustomer && Object.keys(metafieldQuantities).length > 0) {
-        const needsCartRestore = Object.keys(metafieldQuantities).some(variantId => {
-          const metafieldQty = metafieldQuantities[variantId] || 0;
-          const cartQty = cartQuantities[variantId] || 0;
-          console.log(`🔍 Checking restore need for variant ${variantId}: metafield=${metafieldQty}, cart=${cartQty}`);
-          return metafieldQty > 0 && cartQty === 0;
-        });
-        
-        console.log(`🔄 Needs cart restore: ${needsCartRestore}`);
-        
-        if (needsCartRestore) {
-          console.log('🔄 Restoring metafield quantities to cart...');
-          await this.restoreItemsToCart(metafieldQuantities);
-          
-          // Reload cart after restoration
-          setTimeout(async () => {
-            const updatedCart = await this.fetchCurrentCart();
-            this.updateCartIcon(updatedCart);
-          }, 1000);
-        } else {
-          // Update cart icon with current cart state
-          this.updateCartIcon(cartData);
-        }
-      } else {
-        // Update cart icon with current cart state
-        this.updateCartIcon(cartData);
-      }
+      // Update cart icon with current cart state
+      this.updateCartIcon(cartData);
       
-      // Save the final state to metafields for persistence
-      if (this.isCustomer && Object.keys(finalQuantities).length > 0) {
-        await this.saveQuantitiesToMetafields(finalQuantities);
-      }
+      // IMPORTANT: Do NOT auto-restore items from metafields to cart on initialization
+      // This prevents deleted items from being automatically restored
+      // Items in metafields but not in cart are considered deliberately removed
+      // Only the displayed quantities are synced, respecting user's cart deletions
+      
+      console.log('✅ Cart state loaded - displaying cart quantities without auto-restore');
       
     } catch (error) {
       console.error('Error loading cart state:', error);
@@ -311,7 +284,7 @@ class PersistentCart {
   }
 
   // Reset specific variant quantity to zero
-  resetVariantQuantity(variantId) {
+  async resetVariantQuantity(variantId) {
     console.log(`🔄 Resetting quantity for variant ${variantId} to zero`);
     
     const input = document.querySelector(`input[data-variant-id="${variantId}"], input[name="updates[${variantId}]"]`);
@@ -319,7 +292,7 @@ class PersistentCart {
       input.value = 0;
       console.log(`✅ Reset quantity for variant ${variantId} to 0`);
       
-      // Trigger change event to update totals and save
+      // Trigger change event to update totals
       input.dispatchEvent(new Event('change', { bubbles: true }));
       input.dispatchEvent(new Event('input', { bubbles: true }));
       
@@ -328,6 +301,10 @@ class PersistentCart {
         window.priceCalculator.updateRowTotal(input.closest('.table-row, .product-row, .variant-row'));
         window.priceCalculator.updateSubtotal();
       }
+      
+      // Immediately save to metafields to remove this product ID
+      await this.saveCurrentQuantities();
+      console.log(`💾 Saved metafields after removing variant ${variantId}`);
     } else {
       console.warn(`Input not found for variant ${variantId}`);
     }
@@ -344,15 +321,15 @@ class PersistentCart {
     });
 
     // Method 2: Listen for cart line item removals
-    document.addEventListener('cart:line-item-removed', (event) => {
+    document.addEventListener('cart:line-item-removed', async (event) => {
       console.log('🗑️ Cart line item removed:', event.detail);
       if (event.detail && event.detail.variant_id) {
-        this.resetVariantQuantity(event.detail.variant_id.toString());
+        await this.resetVariantQuantity(event.detail.variant_id.toString());
       }
     });
 
     // Method 3: Listen for remove button clicks with enhanced selectors
-    document.addEventListener('click', (e) => {
+    document.addEventListener('click', async (e) => {
       const removeSelectors = [
         '.remove-item-btn', '.cart-remove-btn', '[data-cart-remove]',
         '.cart__remove', '.remove', '.btn--remove', '.cart-item__remove',
@@ -365,7 +342,7 @@ class PersistentCart {
         const variantId = this.getVariantIdFromElement(e.target);
         if (variantId) {
           console.log(`Remove button clicked for variant: ${variantId}`);
-          setTimeout(() => this.resetVariantQuantity(variantId), 200);
+          setTimeout(async () => await this.resetVariantQuantity(variantId), 200);
         }
       }
     });
@@ -379,12 +356,12 @@ class PersistentCart {
     });
 
     // Method 5: Listen for quantity input changes to 0
-    document.addEventListener('change', (e) => {
+    document.addEventListener('change', async (e) => {
       if (e.target.matches('input[name*="updates["]') && e.target.value === '0') {
         const variantId = this.extractVariantIdFromCartInput(e.target);
         if (variantId) {
           console.log(`🗑️ Quantity set to 0 for variant: ${variantId}`);
-          setTimeout(() => this.resetVariantQuantity(variantId), 100);
+          setTimeout(async () => await this.resetVariantQuantity(variantId), 100);
         }
       }
     });
@@ -392,12 +369,12 @@ class PersistentCart {
     // Method 6: Enhanced DOM observer for cart changes
     const cartObserver = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
-        mutation.removedNodes.forEach((node) => {
+        mutation.removedNodes.forEach(async (node) => {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const variantId = this.findVariantIdInRemovedNode(node);
             if (variantId) {
               console.log(`🗑️ Cart item removed via DOM mutation for variant: ${variantId}`);
-              this.resetVariantQuantity(variantId);
+              await this.resetVariantQuantity(variantId);
             }
           }
         });
@@ -475,17 +452,17 @@ class PersistentCart {
   }
 
   // Check for items that were removed from cart
-  checkForRemovedItems() {
+  async checkForRemovedItems() {
     const currentQuantities = this.getCurrentQuantities();
     const cartItems = this.getCurrentCartItems();
     
     // Reset quantities for items no longer in cart
-    Object.keys(currentQuantities).forEach(variantId => {
+    for (const variantId of Object.keys(currentQuantities)) {
       if (!cartItems.includes(variantId) && currentQuantities[variantId] > 0) {
         console.log(`🗑️ Item ${variantId} no longer in cart, resetting quantity`);
-        this.resetVariantQuantity(variantId);
+        await this.resetVariantQuantity(variantId);
       }
-    });
+    }
   }
 
   // Get current cart items from DOM
@@ -511,21 +488,21 @@ class PersistentCart {
     
     let lastCartItems = this.getCurrentCartItems();
     
-    this.cartMonitorInterval = setInterval(() => {
+    this.cartMonitorInterval = setInterval(async () => {
       const currentCartItems = this.getCurrentCartItems();
       const removedItems = lastCartItems.filter(id => !currentCartItems.includes(id));
       
-      removedItems.forEach(variantId => {
+      for (const variantId of removedItems) {
         console.log(`🗑️ Cart monitoring detected removed item: ${variantId}`);
-        this.resetVariantQuantity(variantId);
-      });
+        await this.resetVariantQuantity(variantId);
+      }
       
       lastCartItems = currentCartItems;
     }, 1500); // Check every 1.5 seconds
   }
 
   // Handle cart update events from Shopify
-  handleCartUpdate(cartData) {
+  async handleCartUpdate(cartData) {
     console.log('Handling cart update:', cartData);
     
     if (!cartData || !cartData.items) return;
@@ -537,12 +514,12 @@ class PersistentCart {
     const cartVariantIds = cartData.items.map(item => item.variant_id?.toString() || item.id?.toString()).filter(Boolean);
     
     // Find variants that were in our form but are no longer in cart
-    Object.keys(currentQuantities).forEach(variantId => {
+    for (const variantId of Object.keys(currentQuantities)) {
       if (!cartVariantIds.includes(variantId)) {
         console.log(`Variant ${variantId} was removed from cart, resetting quantity`);
-        this.resetVariantQuantity(variantId);
+        await this.resetVariantQuantity(variantId);
       }
-    });
+    }
   }
 
   // Bind events to quantity inputs and form submission
@@ -563,18 +540,18 @@ class PersistentCart {
         // Update row subtotal immediately for live streaming effect
         this.updateRowSubtotalImmediate(e.target);
         
-        // Debounce both the quantity change and cart icon update
+        // Instant cart update with minimal debounce (50ms) for performance
         clearTimeout(this.saveTimeout);
         this.saveTimeout = setTimeout(() => {
           this.handleQuantityChange(e.target);
-        }, 1000);
+        }, 50);
         
-        // Quick cart icon update for immediate feedback
+        // Instant cart icon update
         clearTimeout(this.cartIconUpdateTimeout);
         this.cartIconUpdateTimeout = setTimeout(async () => {
           const cartData = await this.fetchCurrentCart();
           this.updateCartIcon(cartData);
-        }, 200);
+        }, 10);
       }
     });
   }
@@ -645,7 +622,7 @@ class PersistentCart {
     }
     
     const subtotal = price * quantity;
-    const formattedSubtotal = `₹${subtotal.toFixed(2)}`;
+    const formattedSubtotal = `$${subtotal.toFixed(2)}`;
     
     // Update the subtotal with enhanced live streaming animation
     if (subtotalElement.textContent !== formattedSubtotal) {
@@ -662,7 +639,7 @@ class PersistentCart {
       }, 300);
     }
     
-    console.log(`💰 Row subtotal updated live: ${quantity} × ₹${price.toFixed(2)} = ${formattedSubtotal}`);
+    console.log(`💰 Row subtotal updated live: ${quantity} × $${price.toFixed(2)} = ${formattedSubtotal}`);
   }
 
   // Shopify Polaris Toast notification helper method
@@ -876,7 +853,7 @@ class PersistentCart {
   // Format price according to Shopify money format
   formatPrice(priceInCents) {
     const price = priceInCents / 100;
-    return `Rs ${price.toFixed(2)}`;
+    return `$${price.toFixed(2)}`;
   }
 
   // Debounced cart icon update to handle rapid changes
@@ -1337,7 +1314,7 @@ class PriceCalculator {
       // Priority 1: Use data-price attribute (Shopify prices in cents)
       if (priceElement.dataset.price) {
         const priceInCents = parseInt(priceElement.dataset.price) || 0;
-        price = priceInCents / 100; // Convert cents to rupees
+        price = priceInCents / 100; // Convert cents to dollars
       }
       // Priority 2: Parse displayed text if data-price not available
       else {
@@ -1351,7 +1328,7 @@ class PriceCalculator {
       
       const quantity = parseInt(qtyInput.value) || 0;
       const total = (price * quantity).toFixed(2);
-      const formattedTotal = `₹${total}`;
+      const formattedTotal = `$${total}`;
       
       // Update with enhanced live streaming animation
       if (rowTotal.textContent !== formattedTotal) {
@@ -1389,8 +1366,8 @@ class PriceCalculator {
             // Priority 1: Use data-price attribute (Shopify prices in cents)
             if (priceElement.dataset.price) {
               const priceInCents = parseInt(priceElement.dataset.price) || 0;
-              price = priceInCents / 100; // Convert cents to rupees
-              console.log(`Using data-price: ${priceInCents} cents = ${price} rupees`);
+              price = priceInCents / 100; // Convert cents to dollars
+              console.log(`Using data-price: ${priceInCents} cents = ${price} dollars`);
             }
             // Priority 2: Parse displayed text if data-price not available
             else {
@@ -1400,7 +1377,7 @@ class PriceCalculator {
                 .replace(/,/g, '') // Remove commas
                 .replace(/[^\d.]/g, ''); // Keep only digits and decimal
               price = parseFloat(cleanPrice) || 0;
-              console.log(`Using text price: "${priceText}" -> ${price} rupees`);
+              console.log(`Using text price: "${priceText}" -> ${price} dollars`);
             }
             
             const lineTotal = price * quantity;
@@ -1420,8 +1397,8 @@ class PriceCalculator {
     const subtotal = this.calculateSubtotal();
     const subtotalElement = document.getElementById("subtotal-amount");
     if (subtotalElement) {
-      subtotalElement.textContent = `Rs ${subtotal.toFixed(2)}`;
-      console.log('✅ Subtotal updated:', `Rs ${subtotal.toFixed(2)}`);
+      subtotalElement.textContent = `$${subtotal.toFixed(2)}`;
+      console.log('✅ Subtotal updated:', `$${subtotal.toFixed(2)}`);
     } else {
       console.warn('❌ Subtotal element not found (#subtotal-amount)');
     }
@@ -1925,25 +1902,25 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Global function to reset variant quantity (can be called from anywhere)
-window.resetVariantQuantity = function(variantId) {
+window.resetVariantQuantity = async function(variantId) {
   console.log(`🌍 Global function called to reset variant ${variantId}`);
   if (window.persistentCart) {
-    window.persistentCart.resetVariantQuantity(variantId);
+    await window.persistentCart.resetVariantQuantity(variantId);
   } else {
     console.warn('PersistentCart not initialized yet');
   }
 };
 
 // Global function to handle cart removal events
-window.handleCartItemRemoval = function(variantIds) {
+window.handleCartItemRemoval = async function(variantIds) {
   console.log(`🌍 Global function called to handle cart item removal:`, variantIds);
   if (window.persistentCart) {
     const ids = Array.isArray(variantIds) ? variantIds : [variantIds];
-    ids.forEach(variantId => {
+    for (const variantId of ids) {
       if (variantId) {
-        window.persistentCart.resetVariantQuantity(variantId);
+        await window.persistentCart.resetVariantQuantity(variantId);
       }
-    });
+    }
   } else {
     console.warn('PersistentCart not initialized yet');
   }
@@ -2036,15 +2013,8 @@ class FixedCartSummary {
   }
 
   debouncedUpdateFixedCartSummary() {
-    // Clear any existing timeout
-    if (this.updateTimeout) {
-      clearTimeout(this.updateTimeout);
-    }
-    
-    // Set a longer timeout to prevent flickering from multiple rapid updates
-    this.updateTimeout = setTimeout(() => {
-      this.updateFixedCartSummary();
-    }, 500);
+    // Instant update - no delay for real-time React-like behavior
+    this.updateFixedCartSummary();
   }
 
   // Update row subtotal immediately (same as in PersistentCart class)
@@ -2073,7 +2043,7 @@ class FixedCartSummary {
     }
     
     const subtotal = price * quantity;
-    const formattedSubtotal = `₹${subtotal.toFixed(2)}`;
+    const formattedSubtotal = `$${subtotal.toFixed(2)}`;
     
     // Update the subtotal with enhanced live streaming animation
     if (subtotalElement.textContent !== formattedSubtotal) {
@@ -2090,7 +2060,7 @@ class FixedCartSummary {
       }, 300);
     }
     
-    console.log(`💰 Row subtotal updated live: ${quantity} × ₹${price.toFixed(2)} = ${formattedSubtotal}`);
+    console.log(`💰 Row subtotal updated live: ${quantity} × $${price.toFixed(2)} = ${formattedSubtotal}`);
   }
 
   bindQuantityButtons() {
@@ -2346,13 +2316,13 @@ class FixedCartSummary {
 
       // Update row totals
       document.querySelectorAll('.row-total').forEach(total => {
-        total.textContent = '₹0.00';
+        total.textContent = '$0.00';
       });
 
       // Update main subtotal
       const subtotalElement = document.getElementById('subtotal-amount');
       if (subtotalElement) {
-        subtotalElement.textContent = '₹0.00';
+        subtotalElement.textContent = '$0.00';
       }
 
       // Update fixed cart summary
@@ -2408,14 +2378,8 @@ class FixedCartSummary {
     // Shopify returns prices in cents, convert to currency format
     const amount = cents / 100;
     
-    // Use the same currency symbol as shown in your template (₹ for INR or $ for USD)
-    // Check if we have a price element to determine currency symbol
-    const existingPriceElement = document.querySelector('.qo-price-value');
-    if (existingPriceElement && existingPriceElement.textContent.includes('₹')) {
-      return '₹' + amount.toFixed(2);
-    } else {
-      return '$' + amount.toFixed(2);
-    }
+    // Use dollar symbol for all currency formatting
+    return '$' + amount.toFixed(2);
   }
 
   // Helper method to get current cart data

@@ -2,7 +2,7 @@
 
 client_id = "868557ed2035e3e4c12d0069c307a6e3"
 name = "i95Dev B2B"
-application_url = "https://dramatic-larry-runs-mens.trycloudflare.com"
+application_url = "https://mothers-grades-frames-experience.trycloudflare.com"
 embedded = true
 
 [build]
@@ -20,7 +20,7 @@ api_version = "2026-01"
 scopes = "read_companies,read_customers,read_orders,read_products,read_script_tags,read_themes,unauthenticated_read_product_listings,write_companies,write_content,write_customers,write_discounts,write_online_store_navigation,write_orders,write_products,write_script_tags,write_themes"
 
 [auth]
-redirect_urls = [ "https://dramatic-larry-runs-mens.trycloudflare.com/api/auth" ]
+redirect_urls = [ "https://mothers-grades-frames-experience.trycloudflare.com/api/auth" ]
 
 [app_proxy]
 url = "/apps/quick-order"
