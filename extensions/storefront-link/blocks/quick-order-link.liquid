@@ -11,108 +11,22 @@
     {% render 'quick-order-list' %}
   </div>
 {% else %}
-  <!-- Customer is not logged in, show login prompt -->
-  <div class="quick-order-login-required">
-    <div class="login-prompt">
-      <div class="login-card">
-        <div class="login-icon">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 12C14.21 12 16 10.21 16 8C16 5.79 14.21 4 12 4C9.79 4 8 5.79 8 8C8 10.21 9.79 12 12 12ZM12 14C9.33 14 4 15.34 4 18V20H20V18C20 15.34 14.67 14 12 14Z" fill="currentColor"/>
-          </svg>
-        </div>
-        <h3 class="login-heading">Login Required</h3>
-        <p class="login-description">
-          Please log in to your account to access the Quick Order feature.
-        </p>
-        <div class="login-actions">
-          <a href="/account/login?return_url={{ request.path | url_encode }}" class="button button--primary login-button">
-            Log In
-          </a>
-        </div>
-      </div>
-    </div>
+  <!-- Customer is not logged in -->
+  <div class="quick-order-list-wrapper" id="quick-order-preview">
+    {% comment %} Show the actual Quick Order interface ONLY for theme editor preview {% endcomment %}
+    {% render 'quick-order-list' %}
   </div>
 
-  <style>
-    .quick-order-login-required {
-      padding: 40px 20px;
-      text-align: center;
-      background-color: #ffffff;
-    }
-
-    .login-prompt {
-      max-width: 400px;
-      margin: 0 auto;
-    }
-
-    .login-card {
-      background: #ffffff;
-      border-radius: 8px;
-      padding: 30px 20px;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
-      border: none;
-    }
-
-    .login-icon {
-      margin: 0 0 15px 0;
-      color: #000000;
-    }
-
-    .login-heading {
-      margin: 0 0 10px 0;
-      font-size: 20px;
-      font-weight: 700;
-      color: #000000;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-
-    .login-description {
-      margin: 0 0 20px 0;
-      font-size: 14px;
-      line-height: 1.5;
-      color: #333333;
-    }
-
-    .login-actions {
-      display: flex;
-      justify-content: center;
-    }
-
-    .login-button {
-      padding: 12px 24px;
-      border-radius: 0;
-      text-decoration: none;
-      font-weight: 700;
-      font-size: 14px;
-      transition: all 0.3s ease;
-      border: 2px solid #000000;
-      cursor: pointer;
-      display: inline-block;
-      background-color: #000000;
-      color: #ffffff;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-
-    .login-button:hover {
-      background-color: #ffffff;
-      color: #000000;
-      text-decoration: none;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    }
-
-    @media (max-width: 768px) {
-      .quick-order-login-required {
-        padding: 20px 15px;
+  <script>
+    // Check if customer is logged in on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      // Only redirect if not in theme editor/preview mode
+      if (!window.Shopify?.designMode && !window.location.search.includes('preview_theme_id')) {
+        // Immediate redirect to Shopify login without any delay or toast
+        window.location.href = '/account/login?return_url=' + encodeURIComponent(window.location.pathname);
       }
-
-      .login-card {
-        padding: 20px 15px;
-      }
-    }
-  </style>
+    });
+  </script>
 {% endif %}
 
 {% schema %}

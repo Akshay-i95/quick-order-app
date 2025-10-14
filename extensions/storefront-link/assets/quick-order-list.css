@@ -295,6 +295,19 @@
   align-items: center;
 }
 
+/* Header Column Alignment - Match content alignment */
+.qo-header-price {
+  justify-content: flex-end; /* Right align to match .qo-product-price */
+}
+
+.qo-header-quantity {
+  justify-content: center; /* Center align to match .qo-product-quantity */
+}
+
+.qo-header-total {
+  justify-content: flex-end; /* Right align to match .qo-product-total */
+}
+
 .qo-products-grid {
   display: flex;
   flex-direction: column;
@@ -556,6 +569,16 @@
   justify-content: center;
 }
 
+/* Reset any inherited input styling - only for input fields, not buttons */
+.qo-product-quantity .qo-quantity-input {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  margin: 0 !important;
+  box-sizing: border-box;
+}
+
 .qo-quantity-input-wrapper {
   display: flex;
   align-items: center;
@@ -567,6 +590,8 @@
   height: 40px;
   padding: 2px;
   gap: 2px;
+  box-sizing: border-box;
+  overflow: hidden; /* Prevent any child elements from creating extra borders */
 }
 
 .qo-quantity-input-wrapper:focus-within {
@@ -575,19 +600,25 @@
 }
 
 .qo-qty-btn {
-  background: none;
-  border: none;
-  padding: 6px;
-  cursor: pointer;
-  color: #6d7175;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
-  border-radius: 4px;
-  min-width: 28px;
-  height: 28px;
-  flex-shrink: 0;
+  background: none !important;
+  border: none !important;
+  padding: 4px !important;
+  cursor: pointer !important;
+  color: #6d7175 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.15s ease !important;
+  border-radius: 3px !important;
+  min-width: 24px !important;
+  height: 24px !important;
+  flex-shrink: 0 !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  position: relative !important;
+  z-index: 1 !important;
 }
 
 .qo-qty-btn:hover:not(:disabled) {
@@ -602,10 +633,12 @@
 }
 
 .qo-qty-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  background-color: #f6f6f7;
-  color: #8c9196;
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+  background-color: #f6f6f7 !important;
+  color: #8c9196 !important;
+  display: flex !important;
+  visibility: visible !important;
 }
 
 .qo-quantity-disabled {
@@ -647,18 +680,32 @@
   stroke: #000000;
 }
 
+.qo-qty-btn svg {
+  width: 12px !important;
+  height: 12px !important;
+  stroke: currentColor !important;
+  stroke-width: 1.5 !important;
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
 .qo-quantity-input {
-  border: none;
+  border: none !important;
   width: 50px;
   padding: 6px 4px;
   text-align: center;
   font-size: 14px;
-  background: transparent;
+  background: transparent !important;
   font-family: inherit;
   -moz-appearance: textfield; /* Remove arrows in Firefox */
   appearance: textfield; /* Standard property */
   flex: 1;
   min-width: 0;
+  box-shadow: none !important;
+  outline: none !important;
+  margin: 0 !important;
+  box-sizing: border-box;
 }
 
 .qo-quantity-input:focus {
