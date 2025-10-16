@@ -8,15 +8,10 @@ import {
   Card,
   BlockStack,
   InlineStack,
-  InlineGrid,
   Text,
   Box,
   Icon,
-  Badge,
   Button,
-  Banner,
-  Divider,
-  Checkbox,
   Collapsible,
 } from "@shopify/polaris";
 import {
@@ -43,9 +38,10 @@ export const loader = async ({ request }) => {
     const newPage = await createQuickOrderPage(shopDomain, accessToken);
     const themeId = await getActiveTheme(shopDomain, accessToken);
     const previewPath = `/pages/quick-order`;
-    const customizeUrl = `https://${shopDomain}/admin/themes/${themeId}/editor?previewPath=${encodeURIComponent(
-      previewPath
-    )}`;
+    
+    // Extract shop name from domain (remove .myshopify.com)
+    const shopName = shopDomain.replace('.myshopify.com', '');
+    const customizeUrl = `https://admin.shopify.com/store/${shopName}/themes/${themeId}/editor?customCss=true&previewPath=${encodeURIComponent(previewPath)}`;
 
     if (newPage) {
       const menu = await getMainMenu(admin);
@@ -84,8 +80,6 @@ export default function Index() {
   }, []);
 
   const [expandedStep, setExpandedStep] = useState(null);
-  const [completedSteps, setCompletedSteps] = useState([]);
-  const [showSuccess, setShowSuccess] = useState(false);
 
   const steps = [
     {
@@ -147,18 +141,6 @@ export default function Index() {
     setExpandedStep(expandedStep === stepId ? null : stepId);
   };
 
-  const handleComplete = (stepId) => {
-    if (completedSteps.includes(stepId)) {
-      setCompletedSteps(completedSteps.filter(id => id !== stepId));
-    } else {
-      setCompletedSteps([...completedSteps, stepId]);
-      if (completedSteps.length + 1 === steps.length) {
-        setShowSuccess(true);
-        setTimeout(() => setShowSuccess(false), 5000);
-      }
-    }
-  };
-
   return (
     <Page>
       <TitleBar title="i95Dev B2B Portal - Quick Order" />
@@ -191,14 +173,7 @@ export default function Index() {
               </InlineStack>
             </Card>
 
-            {/* Success Banner */}
-            {showSuccess && (
-              <Banner title="Setup completed successfully!" tone="success">
-                <Text as="p" variant="bodyMd">
-                  All setup steps have been completed. Your Quick Order system is ready for B2B customers.
-                </Text>
-              </Banner>
-            )}
+
 
             {/* Introduction */}
             <Card>
@@ -230,7 +205,6 @@ export default function Index() {
                 <BlockStack gap="300">
                   {steps.map((step) => {
                     const isExpanded = expandedStep === step.id;
-                    const isCompleted = completedSteps.includes(step.id);
 
                     return (
                       <Box 
@@ -250,14 +224,14 @@ export default function Index() {
                           <Box padding="400">
                             <InlineStack gap="200" blockAlign="center" wrap={false}>
                               <Box 
-                                background={isCompleted ? "bg-fill-success-secondary" : "bg-surface-secondary"} 
+                                background="bg-surface-secondary" 
                                 padding="400" 
                                 borderRadius="100"
                                 minWidth="48px"
                               >
                                 <Icon 
-                                  source={isCompleted ? CheckCircleIcon : step.icon} 
-                                  tone={isCompleted ? "success" : "base"}
+                                  source={step.icon} 
+                                  tone="base"
                                   size="large"
                                 />
                               </Box>
@@ -267,9 +241,6 @@ export default function Index() {
                                   <Text as="span" variant="bodySm" tone="subdued" fontWeight="medium">
                                     STEP {step.id}
                                   </Text>
-                                  {isCompleted && (
-                                    <Badge tone="success">COMPLETED</Badge>
-                                  )}
                                 </InlineStack>
                                 <Text as="h3" variant="headingMd" fontWeight="semibold">
                                   {step.title}
@@ -371,11 +342,6 @@ export default function Index() {
                                           key={index}
                                           variant="primary"
                                           size="medium"
-                                          icon={
-                                            button.icon === 'settings' ? SettingsIcon : 
-                                            button.icon === 'product' ? ProductIcon : 
-                                            OrderIcon
-                                          }
                                           url={
                                             button.action === 'metafields' ? `https://admin.shopify.com/store/${shopDomain.replace('.myshopify.com', '')}/settings/custom_data/customer/metafields` : 
                                             button.action === 'pages' ? `https://admin.shopify.com/store/${shopDomain.replace('.myshopify.com', '')}/pages?selectedView=all` : 
@@ -391,10 +357,6 @@ export default function Index() {
                                     <Button
                                       variant="primary"
                                       size="medium"
-                                      icon={
-                                        step.buttonAction === 'addBlock' ? ThemeEditIcon : 
-                                        OrderIcon
-                                      }
                                       url={
                                         step.buttonAction === 'addBlock' ? customizeUrl : 
                                         storeUrl
@@ -407,13 +369,7 @@ export default function Index() {
                                 </Box>
                               )}
                               
-                              <Box paddingBlockStart="200">
-                                <Checkbox
-                                  label="Mark as completed"
-                                  checked={isCompleted}
-                                  onChange={() => handleComplete(step.id)}
-                                />
-                              </Box>
+
                             </BlockStack>
                           </Box>
                         </Collapsible>
