@@ -27,6 +27,7 @@ import {
   ProductIcon,
   OrderIcon,
   ThemeEditIcon,
+  DeleteIcon,
 } from "@shopify/polaris-icons";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -61,6 +62,7 @@ export const loader = async ({ request }) => {
       pageHandle: newPage?.handle || "quick-order",
       customizeUrl: customizeUrl,
       storeUrl: `https://${shopDomain}/pages/quick-order`,
+      shopDomain: shopDomain,
     });
   } catch (error) {
     console.error("Error setting up quick order page:", error);
@@ -72,7 +74,7 @@ export const loader = async ({ request }) => {
 };
 
 export default function Index() {
-  const { customizeUrl, storeUrl } = useLoaderData();
+  const { customizeUrl, storeUrl, shopDomain } = useLoaderData();
   const fetcher = useFetcher();
 
   // Trigger the Quick Order metafield setup when this component mounts
@@ -110,28 +112,35 @@ export default function Index() {
     },
     {
       id: 3,
-      title: 'Add to Navigation Menu',
-      description: 'Link the Quick Order page in your main navigation for easy customer access.',
+      title: 'Customize Theme Settings',
+      description: 'Personalize colors, layout, and display options to match your brand.',
       icon: SettingsIcon,
-      guidance: 'Go to Online Store > Navigation > Main Menu, and add a link to /pages/quick-order. Recommend placing it prominently for B2B customers.',
+      guidance: 'Use the theme editor to customize Quick Order styling. Adjust grid layouts, enable/disable features, and configure B2B-specific settings like SKU search and bulk ordering.',
       color: 'info'
     },
     {
       id: 4,
-      title: 'Configure Customer Metafields',
-      description: 'Customer metafields enable persistent cart functionality across devices.',
-      icon: ProductIcon,
-      guidance: 'The app automatically creates customer.metafields.custom.quick_order_cart to store cart data. This allows customers to resume orders from any device.',
-      color: 'warning'
-    },
-    {
-      id: 5,
-      title: 'Customize Theme Settings',
-      description: 'Personalize colors, layout, and display options to match your brand.',
-      icon: ThemeEditIcon,
-      guidance: 'Use the theme editor to customize Quick Order styling. Adjust grid layouts, enable/disable features, and configure B2B-specific settings like SKU search and bulk ordering.',
-      color: 'info'
+      title: 'App Uninstallation Guide',
+      description: 'Important: What to delete when removing the Quick Order app.',
+      icon: DeleteIcon,
+      guidance: 'Follow these steps to completely remove the Quick Order app:\n\n1. Delete customer metafields from Settings > Customer events > Metafields\n2. Remove the Quick Order page from Online Store > Pages\n\nThis ensures complete cleanup of all app-related data and pages.',
+      color: 'warning',
+      hasButton: true,
+      hasMultipleButtons: true,
+      buttons: [
+        {
+          text: 'Metafield Uninstall',
+          action: 'metafields',
+          icon: 'settings'
+        },
+        {
+          text: 'Delete Pages',
+          action: 'pages',
+          icon: 'product'
+        }
+      ]
     }
+
   ];
 
   const toggleStep = (stepId) => {
@@ -161,7 +170,7 @@ export default function Index() {
             {/* Header */}
             <Card>
               <InlineStack align="space-between" blockAlign="center">
-                <InlineStack gap="400" blockAlign="center">
+                <InlineStack gap="200" blockAlign="center">
                   <Box padding="200">
                     <img 
                       src="https://www.i95dev.com/wp-content/uploads/2020/08/i95dev-Logo-red.png" 
@@ -239,21 +248,22 @@ export default function Index() {
                           disclosure={isExpanded ? "up" : "down"}
                         >
                           <Box padding="400">
-                            <InlineStack gap="400" blockAlign="center" wrap={false}>
+                            <InlineStack gap="200" blockAlign="center" wrap={false}>
                               <Box 
-                                background={isCompleted ? "bg-fill-success" : "bg-surface-secondary"} 
-                                padding="300" 
+                                background={isCompleted ? "bg-fill-success-secondary" : "bg-surface-secondary"} 
+                                padding="400" 
                                 borderRadius="100"
-                                minWidth="40px"
+                                minWidth="48px"
                               >
                                 <Icon 
                                   source={isCompleted ? CheckCircleIcon : step.icon} 
-                                  tone={isCompleted ? "success" : "base"} 
+                                  tone={isCompleted ? "success" : "base"}
+                                  size="large"
                                 />
                               </Box>
                               
                               <BlockStack gap="100">
-                                <InlineStack gap="200" blockAlign="center">
+                                <InlineStack gap="100" blockAlign="center">
                                   <Text as="span" variant="bodySm" tone="subdued" fontWeight="medium">
                                     STEP {step.id}
                                   </Text>
@@ -275,13 +285,13 @@ export default function Index() {
                         <Collapsible open={isExpanded} id={`step-${step.id}`}>
                           <Box background="bg-surface-secondary" padding="400" borderBlockStartWidth="025" borderColor="border">
                             <BlockStack gap="300">
-                              <InlineStack gap="300" blockAlign="start">
+                              <InlineStack gap="200" blockAlign="start">
                                 <Box background="bg-fill-info" padding="200" borderRadius="100" minWidth="32px">
                                   <Icon source={CheckCircleIcon} tone="info" />
                                 </Box>
                                 <BlockStack gap="100">
                                   <Text as="h4" variant="bodyMd" fontWeight="semibold">
-                                    Best Practice
+                                    {step.title}
                                   </Text>
                                   <Box>
                                     {step.id === 1 ? (
@@ -300,6 +310,49 @@ export default function Index() {
                                           This installs the complete Quick Order system with cart management, inventory validation, and multi-device support.
                                         </Text>
                                       </BlockStack>
+                                    ) : step.id === 2 ? (
+                                      <BlockStack gap="200">
+                                        <Text as="p" variant="bodySm" tone="subdued">
+                                          Test the Quick Order functionality with these steps:
+                                        </Text>
+                                        <Box as="ol" paddingInlineStart="400">
+                                          <Text as="li" variant="bodySm" tone="subdued">Click "Visit Quick Order Page" button below</Text>
+                                          <Text as="li" variant="bodySm" tone="subdued">Search for products by name or SKU</Text>
+                                          <Text as="li" variant="bodySm" tone="subdued">Add quantities and test variant selection</Text>
+                                          <Text as="li" variant="bodySm" tone="subdued">Verify cart functionality and checkout process</Text>
+                                        </Box>
+                                        <Text as="p" variant="bodySm" tone="subdued">
+                                          The Quick Order page is automatically created at /pages/quick-order with full B2B ordering capabilities.
+                                        </Text>
+                                      </BlockStack>
+                                    ) : step.id === 3 ? (
+                                      <BlockStack gap="200">
+                                        <Text as="p" variant="bodySm" tone="subdued">
+                                          Customize the Quick Order appearance and settings:
+                                        </Text>
+                                        <Box as="ol" paddingInlineStart="400">
+                                          <Text as="li" variant="bodySm" tone="subdued">Use the theme editor to access Quick Order settings</Text>
+                                          <Text as="li" variant="bodySm" tone="subdued">Adjust colors, layout, and grid options</Text>
+                                          <Text as="li" variant="bodySm" tone="subdued">Configure B2B-specific features like SKU search</Text>
+                                          <Text as="li" variant="bodySm" tone="subdued">Enable/disable bulk ordering options</Text>
+                                        </Box>
+                                        <Text as="p" variant="bodySm" tone="subdued">
+                                          Personalize the experience to match your brand and B2B customer needs.
+                                        </Text>
+                                      </BlockStack>
+                                    ) : step.id === 4 ? (
+                                      <BlockStack gap="200">
+                                        <Text as="p" variant="bodySm" tone="subdued">
+                                          Follow these steps to completely remove the Quick Order app:
+                                        </Text>
+                                        <Box as="ol" paddingInlineStart="400">
+                                          <Text as="li" variant="bodySm" tone="subdued">Delete customer metafields from Settings {"> "} Customer events {"> "} Metafields</Text>
+                                          <Text as="li" variant="bodySm" tone="subdued">Remove the Quick Order page from Online Store {"> "} Pages</Text>
+                                        </Box>
+                                        <Text as="p" variant="bodySm" tone="subdued">
+                                          This ensures complete cleanup of all app-related data and pages.
+                                        </Text>
+                                      </BlockStack>
                                     ) : (
                                       <Text as="p" variant="bodySm" tone="subdued">
                                         {step.guidance}
@@ -311,15 +364,46 @@ export default function Index() {
                               
                               {step.hasButton && (
                                 <Box paddingBlockStart="300">
-                                  <Button
-                                    variant="primary"
-                                    size="medium"
-                                    icon={step.buttonAction === 'addBlock' ? ThemeEditIcon : OrderIcon}
-                                    url={step.buttonAction === 'addBlock' ? customizeUrl : storeUrl}
-                                    target="_blank"
-                                  >
-                                    {step.buttonText}
-                                  </Button>
+                                  {step.hasMultipleButtons ? (
+                                    <InlineStack gap="300">
+                                      {step.buttons.map((button, index) => (
+                                        <Button
+                                          key={index}
+                                          variant="primary"
+                                          size="medium"
+                                          icon={
+                                            button.icon === 'settings' ? SettingsIcon : 
+                                            button.icon === 'product' ? ProductIcon : 
+                                            OrderIcon
+                                          }
+                                          url={
+                                            button.action === 'metafields' ? `https://admin.shopify.com/store/${shopDomain.replace('.myshopify.com', '')}/settings/custom_data/customer/metafields` : 
+                                            button.action === 'pages' ? `https://admin.shopify.com/store/${shopDomain.replace('.myshopify.com', '')}/pages?selectedView=all` : 
+                                            storeUrl
+                                          }
+                                          target="_blank"
+                                        >
+                                          {button.text}
+                                        </Button>
+                                      ))}
+                                    </InlineStack>
+                                  ) : (
+                                    <Button
+                                      variant="primary"
+                                      size="medium"
+                                      icon={
+                                        step.buttonAction === 'addBlock' ? ThemeEditIcon : 
+                                        OrderIcon
+                                      }
+                                      url={
+                                        step.buttonAction === 'addBlock' ? customizeUrl : 
+                                        storeUrl
+                                      }
+                                      target="_blank"
+                                    >
+                                      {step.buttonText}
+                                    </Button>
+                                  )}
                                 </Box>
                               )}
                               
@@ -340,157 +424,85 @@ export default function Index() {
               </BlockStack>
             </Card>
 
-            {/* Action Buttons */}
-            <Card>
-              <BlockStack gap="400">
-                <Text as="h2" variant="headingLg" fontWeight="semibold">
-                  Quick Actions
-                </Text>
-                
-                <InlineStack gap="300">
-                  <Button
-                    variant="primary"
-                    size="large"
-                    icon={OrderIcon}
-                    url="/pages/quick-order"
-                    target="_blank"
-                  >
-                    View Quick Order Page
-                  </Button>
 
-                  <Button
-                    size="large"
-                    icon={ThemeEditIcon}
-                    url={customizeUrl}
-                    target="_blank"
-                  >
-                    Customize in Theme Editor
-                  </Button>
-                </InlineStack>
-
-                <Divider />
-
-                <Banner tone="info">
-                  <Text as="p" variant="bodyMd">
-                    Need advanced B2B features like customer-specific pricing, quote management, or approval workflows? 
-                    <Button url="mailto:support@i95dev.com" variant="plain" removeUnderline>
-                      Contact i95Dev
-                    </Button> to upgrade to the full B2B Portal.
-                  </Text>
-                </Banner>
-              </BlockStack>
-            </Card>
 
             {/* Key Features */}
             <Card>
-              <BlockStack gap="500">
+              <BlockStack gap="400">
                 <Text as="h2" variant="headingLg" fontWeight="semibold">
                   Key Features
                 </Text>
                 
-                <Box>
-                  <InlineGrid columns={{ xs: 1, md: 2 }} gap="400">
-                    <Box 
-                      padding="400" 
-                      background="bg-surface-secondary" 
-                      borderRadius="200"
-                    >
-                      <InlineStack gap="400" blockAlign="start">
-                        <Box>
-                          <Icon source={CheckCircleIcon} tone="success" />
-                        </Box>
-                        <BlockStack gap="100">
-                          <Text as="h3" variant="headingSm" fontWeight="semibold">
-                            SKU-Based Search
-                          </Text>
-                          <Text as="p" variant="bodyMd" tone="subdued">
-                            Customers can search by SKU or product name with auto-complete suggestions
-                          </Text>
-                        </BlockStack>
-                      </InlineStack>
+                <Box as="ul" paddingInlineStart="0">
+                  <Box as="li" style={{ listStyle: 'none', display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '16px' }}>
+                    <Box style={{ marginTop: '2px' }}>
+                      <Icon source={CheckCircleIcon} tone="success" />
                     </Box>
-                    
-                    <Box 
-                      padding="400" 
-                      background="bg-surface-secondary" 
-                      borderRadius="200"
-                    >
-                      <InlineStack gap="400" blockAlign="start">
-                        <Box>
-                          <Icon source={CheckCircleIcon} tone="success" />
-                        </Box>
-                        <BlockStack gap="100">
-                          <Text as="h3" variant="headingSm" fontWeight="semibold">
-                            Variant Selection
-                          </Text>
-                          <Text as="p" variant="bodyMd" tone="subdued">
-                            Inline variant picker for size, color, and material options
-                          </Text>
-                        </BlockStack>
-                      </InlineStack>
+                    <BlockStack gap="100">
+                      <Text as="h3" variant="headingSm" fontWeight="semibold">
+                        SKU-Based Search
+                      </Text>
+                      <Text as="p" variant="bodyMd" tone="subdued">
+                        Customers can search by SKU or product name with auto-complete suggestions
+                      </Text>
+                    </BlockStack>
+                  </Box>
+                  
+                  <Box as="li" style={{ listStyle: 'none', display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '16px' }}>
+                    <Box style={{ marginTop: '2px' }}>
+                      <Icon source={CheckCircleIcon} tone="success" />
                     </Box>
-                    
-                    <Box 
-                      padding="400" 
-                      background="bg-surface-secondary" 
-                      borderRadius="200"
-                    >
-                      <InlineStack gap="400" blockAlign="start">
-                        <Box>
-                          <Icon source={CheckCircleIcon} tone="success" />
-                        </Box>
-                        <BlockStack gap="100">
-                          <Text as="h3" variant="headingSm" fontWeight="semibold">
-                            Real-Time Validation
-                          </Text>
-                          <Text as="p" variant="bodyMd" tone="subdued">
-                            Instant stock checking and quantity validation before checkout
-                          </Text>
-                        </BlockStack>
-                      </InlineStack>
+                    <BlockStack gap="100">
+                      <Text as="h3" variant="headingSm" fontWeight="semibold">
+                        Variant Selection
+                      </Text>
+                      <Text as="p" variant="bodyMd" tone="subdued">
+                        Inline variant picker for size, color, and material options
+                      </Text>
+                    </BlockStack>
+                  </Box>
+                  
+                  <Box as="li" style={{ listStyle: 'none', display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '16px' }}>
+                    <Box style={{ marginTop: '2px' }}>
+                      <Icon source={CheckCircleIcon} tone="success" />
                     </Box>
-                    
-                    <Box 
-                      padding="400" 
-                      background="bg-surface-secondary" 
-                      borderRadius="200"
-                    >
-                      <InlineStack gap="400" blockAlign="start">
-                        <Box>
-                          <Icon source={CheckCircleIcon} tone="success" />
-                        </Box>
-                        <BlockStack gap="100">
-                          <Text as="h3" variant="headingSm" fontWeight="semibold">
-                            Persistent Cart
-                          </Text>
-                          <Text as="p" variant="bodyMd" tone="subdued">
-                            Cart data syncs across devices using customer metafields
-                          </Text>
-                        </BlockStack>
-                      </InlineStack>
+                    <BlockStack gap="100">
+                      <Text as="h3" variant="headingSm" fontWeight="semibold">
+                        Real-Time Validation
+                      </Text>
+                      <Text as="p" variant="bodyMd" tone="subdued">
+                        Instant stock checking and quantity validation before checkout
+                      </Text>
+                    </BlockStack>
+                  </Box>
+                  
+                  <Box as="li" style={{ listStyle: 'none', display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '16px' }}>
+                    <Box style={{ marginTop: '2px' }}>
+                      <Icon source={CheckCircleIcon} tone="success" />
                     </Box>
-                    
-                    <Box 
-                      padding="400" 
-                      background="bg-surface-secondary" 
-                      borderRadius="200"
-                      style={{ gridColumn: "1 / -1" }}
-                    >
-                      <InlineStack gap="400" blockAlign="start">
-                        <Box>
-                          <Icon source={CheckCircleIcon} tone="success" />
-                        </Box>
-                        <BlockStack gap="100">
-                          <Text as="h3" variant="headingSm" fontWeight="semibold">
-                            Bulk Ordering
-                          </Text>
-                          <Text as="p" variant="bodyMd" tone="subdued">
-                            Add multiple products with different quantities in one click
-                          </Text>
-                        </BlockStack>
-                      </InlineStack>
+                    <BlockStack gap="100">
+                      <Text as="h3" variant="headingSm" fontWeight="semibold">
+                        Persistent Cart
+                      </Text>
+                      <Text as="p" variant="bodyMd" tone="subdued">
+                        Cart data syncs across devices using customer metafields
+                      </Text>
+                    </BlockStack>
+                  </Box>
+                  
+                  <Box as="li" style={{ listStyle: 'none', display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '16px' }}>
+                    <Box style={{ marginTop: '2px' }}>
+                      <Icon source={CheckCircleIcon} tone="success" />
                     </Box>
-                  </InlineGrid>
+                    <BlockStack gap="100">
+                      <Text as="h3" variant="headingSm" fontWeight="semibold">
+                        Bulk Ordering
+                      </Text>
+                      <Text as="p" variant="bodyMd" tone="subdued">
+                        Add multiple products with different quantities in one click
+                      </Text>
+                    </BlockStack>
+                  </Box>
                 </Box>
               </BlockStack>
             </Card>

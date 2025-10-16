@@ -311,7 +311,7 @@ class QuickOrderList {
       button.style.opacity = '0.7';
     } else {
       button.disabled = false;
-      button.textContent = 'Add to Cart';
+      button.textContent = 'View Cart';
       button.style.opacity = '1';
     }
   }

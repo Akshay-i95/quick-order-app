@@ -117,13 +117,25 @@ class QuantityPopover {
     this.isOpen = false;
   }
 
-  confirm() {
+  async confirm() {
     const quantityInput = this.popover.querySelector('.quantity-stepper__input');
     const trigger = this.container.querySelector('.quantity-input');
     
     if (quantityInput && trigger) {
       trigger.value = quantityInput.value;
       trigger.dispatchEvent(new Event('change', { bubbles: true }));
+      
+      // Ensure immediate metafield save after popover confirmation
+      if (window.persistentCart && window.persistentCart.isCustomer) {
+        await window.persistentCart.handleQuantityChange(trigger);
+        
+        // Force an additional save to ensure data persistence
+        const quantities = window.persistentCart.getCurrentQuantities();
+        if (Object.keys(quantities).length > 0) {
+          await window.persistentCart.saveQuantitiesToMetafields(quantities);
+          console.log('🚀 Forced immediate metafield save after popover confirm');
+        }
+      }
     }
     
     this.close();
@@ -133,7 +145,7 @@ class QuantityPopover {
     const quantityInput = this.popover.querySelector('.quantity-stepper__input');
     if (quantityInput) {
       const currentValue = parseInt(quantityInput.value) || 1;
-      quantityInput.value = (99, currentValue + 1);
+      quantityInput.value = Math.min(99, currentValue + 1);
     }
   }
 

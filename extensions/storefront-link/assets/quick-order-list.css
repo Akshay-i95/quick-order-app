@@ -153,10 +153,8 @@
    HEADER SECTION
 ======================================== */
 .qo-header {
-  background: white;
   padding: 32px 0;
-  margin-bottom: 24px;
-  border-bottom: 1px solid #e1e3e5;
+  margin-bottom: 8px;
 }
 
 .qo-header-content {
@@ -164,7 +162,7 @@
 }
 
 .qo-title {
-  font-size: 28px;
+  font-size: 36px;
   font-weight: 600;
   color: #202223;
   margin: 0 0 8px 0;
