@@ -32,17 +32,28 @@ import { createQuickOrderPage, getActiveTheme } from "../services/shopifyPages.s
 import { getMainMenu, updateMenu, createMainMenu } from "../services/shopifyMenus.server";
 
 export const loader = async ({ request }) => {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
 
   try {
-    const shopDomain = process.env.SHOPIFY_DOMAIN;
-    const accessToken = process.env.ACCESS_TOKEN;
+    // Use the shop domain and access token from the current authenticated session
+    // This ensures it works for any store that has the app installed
+    const shopDomain = session.shop;
+    const accessToken = session.accessToken;
+    
+    console.log("Using shop domain:", shopDomain);
+    console.log("Session ID:", session.id);
+    
+    if (!shopDomain || !accessToken) {
+      throw new Error("Shop domain and access token are required from session");
+    }
+    
     const newPage = await createQuickOrderPage(shopDomain, accessToken);
     const themeId = await getActiveTheme(shopDomain, accessToken);
     const previewPath = `/pages/quick-order`;
-    const customizeUrl = `https://${shopDomain}/admin/themes/${themeId}/editor?previewPath=${encodeURIComponent(
-      previewPath
-    )}`;
+    
+    // Extract shop name from domain (remove .myshopify.com)
+    const shopName = shopDomain.replace('.myshopify.com', '');
+    const customizeUrl = `https://admin.shopify.com/store/${shopName}/themes/${themeId}/editor?customCss=true&previewPath=${encodeURIComponent(previewPath)}`;
 
     if (newPage) {
       const menu = await getMainMenu(admin);
@@ -58,12 +69,25 @@ export const loader = async ({ request }) => {
       message: "Quick Order page created/updated successfully",
       pageHandle: newPage?.handle || "quick-order",
       customizeUrl: customizeUrl,
+      storeUrl: `https://${shopDomain}/pages/quick-order`,
+      shopDomain: shopDomain,
     });
   } catch (error) {
     console.error("Error setting up quick order page:", error);
+    
+    // Ensure shopDomain has a fallback value from the session
+    let shopDomain = session?.shop || "unknown-shop.myshopify.com";
+    
+    // Provide dynamic URLs even during errors
+    const shopName = shopDomain.replace('.myshopify.com', '');
+    const fallbackCustomizeUrl = `https://admin.shopify.com/store/${shopName}/themes/current/editor`;
+    
     return json({
       success: false,
       message: "Error setting up quick order page: " + error.message,
+      customizeUrl: fallbackCustomizeUrl,
+      storeUrl: `https://${shopDomain}/pages/quick-order`,
+      shopDomain: shopDomain,
     });
   }
 };

@@ -1,5 +1,66 @@
 import fetch from "node-fetch";
 
+// Add page to navigation menu
+const addToNavigation = async (shop, accessToken, pageHandle, pageTitle) => {
+  try {
+    // First, get the main menu to check if the item already exists
+    const menusResponse = await fetch(`https://${shop}/admin/api/2025-07/menus.json`, {
+      headers: { "X-Shopify-Access-Token": accessToken },
+    });
+    const menusData = await menusResponse.json();
+    
+    // Find the main menu (usually the primary navigation)
+    const mainMenu = menusData.menus.find(menu => 
+      menu.title.toLowerCase().includes('main') || 
+      menu.title.toLowerCase().includes('primary') ||
+      menu.handle === 'main-menu'
+    ) || menusData.menus[0]; // Fallback to first menu if no main menu found
+
+    if (!mainMenu) {
+      console.log("⚠️ No navigation menu found to add Quick Order page");
+      return null;
+    }
+
+    // Check if Quick Order already exists in the menu
+    const existingItem = mainMenu.menu_items?.find(item => 
+      item.title === pageTitle || item.url.includes(pageHandle)
+    );
+
+    if (existingItem) {
+      console.log("ℹ️ Quick Order already exists in navigation menu");
+      return existingItem;
+    }
+
+    // Add the page to the main menu
+    const response = await fetch(`https://${shop}/admin/api/2025-07/menus/${mainMenu.id}/menu_items.json`, {
+      method: "POST",
+      headers: {
+        "X-Shopify-Access-Token": accessToken,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        menu_item: {
+          title: pageTitle,
+          url: `/pages/${pageHandle}`,
+        },
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log("✅ Quick Order added to navigation menu:", data.menu_item.title);
+      return data.menu_item;
+    } else {
+      const errorText = await response.text();
+      console.log("⚠️ Failed to add to navigation menu:", errorText);
+      return null;
+    }
+  } catch (error) {
+    console.log("⚠️ Error adding to navigation menu:", error.message);
+    return null;
+  }
+};
+
 // Get active theme ID
 export async function getActiveTheme(shop, accessToken) {
   const url = `https://${shop}/admin/api/2025-07/themes.json`;
@@ -112,6 +173,14 @@ export async function createQuickOrderPage(shop, accessToken) {
       body: JSON.stringify({ page: { id: pageId, template_suffix: "quick-order-list" } }),
     });
     console.log("✅ Page assigned to quick-order template");
+    
+    // 4️⃣ Add page to navigation menu (non-blocking)
+    try {
+      await addToNavigation(shop, accessToken, page.handle, page.title);
+    } catch (navError) {
+      console.log("⚠️ Navigation menu addition failed (non-critical):", navError.message);
+    }
+    
     return page;
   } catch (err) {
     console.error("Error creating Quick Order page:", err);

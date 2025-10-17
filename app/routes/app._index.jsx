@@ -30,11 +30,24 @@ import { createQuickOrderPage, getActiveTheme } from "../services/shopifyPages.s
 import { getMainMenu, updateMenu, createMainMenu } from "../services/shopifyMenus.server";
 
 export const loader = async ({ request }) => {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
+  
+  // Declare variables outside try block to make them accessible in catch
+  let shopDomain, accessToken;
 
   try {
-    const shopDomain = process.env.SHOPIFY_DOMAIN;
-    const accessToken = process.env.ACCESS_TOKEN;
+    // Use the shop domain and access token from the current authenticated session
+    // This ensures it works for any store that has the app installed
+    shopDomain = session.shop;
+    accessToken = session.accessToken;
+    
+    console.log("Using shop domain:", shopDomain);
+    console.log("Session ID:", session.id);
+    
+    if (!shopDomain || !accessToken) {
+      throw new Error("Shop domain and access token are required from session");
+    }
+    
     const newPage = await createQuickOrderPage(shopDomain, accessToken);
     const themeId = await getActiveTheme(shopDomain, accessToken);
     const previewPath = `/pages/quick-order`;
@@ -62,16 +75,50 @@ export const loader = async ({ request }) => {
     });
   } catch (error) {
     console.error("Error setting up quick order page:", error);
+    
+    // Ensure shopDomain has a fallback value from the session
+    if (!shopDomain) {
+      shopDomain = session?.shop || "unknown-shop.myshopify.com";
+    }
+    
+    // Provide dynamic URLs even during errors
+    const fallbackShopName = shopDomain.replace('.myshopify.com', '');
+    const fallbackCustomizeUrl = `https://admin.shopify.com/store/${fallbackShopName}/themes/current/editor?previewPath=%2Fpages%2Fquick-order`;
+    
+    // Still return the required properties with dynamic fallback values
     return json({
       success: false,
       message: "Error setting up quick order page: " + error.message,
+      customizeUrl: fallbackCustomizeUrl, // Dynamic fallback URL
+      storeUrl: `https://${shopDomain}/pages/quick-order`,
+      shopDomain: shopDomain,
     });
   }
 };
 
 export default function Index() {
-  const { customizeUrl, storeUrl, shopDomain } = useLoaderData();
+  const loaderData = useLoaderData();
+  const { customizeUrl, storeUrl, shopDomain } = loaderData;
   const fetcher = useFetcher();
+
+  // Safety check for required data
+  if (!shopDomain || shopDomain === "unknown-shop.myshopify.com") {
+    return (
+      <Page title="Quick Order Setup">
+        <Banner tone="critical">
+          <p>Unable to load shop information. Please refresh the page or contact support.</p>
+        </Banner>
+      </Page>
+    );
+  }
+
+  // Helper function to safely extract shop name
+  const getShopName = (domain) => {
+    if (!domain || typeof domain !== 'string') return 'your-shop';
+    return domain.replace('.myshopify.com', '');
+  };
+
+  const shopName = getShopName(shopDomain);
 
   // Trigger the Quick Order metafield setup when this component mounts
   useEffect(() => {
@@ -343,8 +390,8 @@ export default function Index() {
                                           variant="primary"
                                           size="medium"
                                           url={
-                                            button.action === 'metafields' ? `https://admin.shopify.com/store/${shopDomain.replace('.myshopify.com', '')}/settings/custom_data/customer/metafields` : 
-                                            button.action === 'pages' ? `https://admin.shopify.com/store/${shopDomain.replace('.myshopify.com', '')}/pages?selectedView=all` : 
+                                            button.action === 'metafields' ? `https://admin.shopify.com/store/${shopName}/settings/custom_data/customer/metafields` : 
+                                            button.action === 'pages' ? `https://admin.shopify.com/store/${shopName}/pages?selectedView=all` : 
                                             storeUrl
                                           }
                                           target="_blank"
